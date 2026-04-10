@@ -72,6 +72,7 @@ export async function launchNewTerminal(
   folderPath?: string,
   bypassPermissions?: boolean,
   initialTask?: string,
+  roomId?: string,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
@@ -135,13 +136,21 @@ export async function launchNewTerminal(
     seenUnknownRecordTypes: new Set(),
     folderName,
     hookDelivered: false,
+    roomId: roomId ?? 'general',
+    agentType: 'claude-cli',
   };
 
   agents.set(id, agent);
   activeAgentIdRef.current = id;
   persistAgents();
   console.log(`[Pixel Agents] Agent ${id}: created for terminal ${terminal.name}`);
-  webview?.postMessage({ type: 'agentCreated', id, folderName });
+  webview?.postMessage({
+    type: 'agentCreated',
+    id,
+    folderName,
+    roomId: agent.roomId,
+    agentType: 'claude-cli',
+  });
 
   ensureProjectScan(
     projectDir,

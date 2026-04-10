@@ -13,11 +13,17 @@ interface CreateAgentModalProps {
   selectedRoomId: string | null;
 }
 
-const LAUNCH_OPTIONS: { value: AgentLaunchTarget; label: string; description: string; icon: string }[] = [
+const LAUNCH_OPTIONS: {
+  value: AgentLaunchTarget;
+  label: string;
+  description: string;
+  icon: string;
+}[] = [
   {
     value: 'copilot',
     label: 'GitHub Copilot Chat',
-    description: 'Opens Copilot Chat in agent mode. Activity auto-detected.',
+    description:
+      'Opens a new Copilot Chat session. Task is copied to clipboard — paste it to start.',
     icon: '🐙',
   },
   {
@@ -76,15 +82,11 @@ export function CreateAgentModal({ rooms, onClose, selectedRoomId }: CreateAgent
   }, [launchTarget, roomId, agentName, command, initialTask, onClose]);
 
   const isValid =
-    launchTarget !== 'custom' ||
-    (agentName.trim().length > 0 && command.trim().length > 0);
+    launchTarget !== 'custom' || (agentName.trim().length > 0 && command.trim().length > 0);
 
   return (
     <Modal isOpen onClose={onClose} title="Spawn Agent">
-      <div
-        className="flex flex-col gap-12 p-16"
-        style={{ minWidth: 320, maxWidth: 480 }}
-      >
+      <div className="flex flex-col gap-12 p-16" style={{ minWidth: 320, maxWidth: 480 }}>
         <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
           Spawn Agent
         </h2>

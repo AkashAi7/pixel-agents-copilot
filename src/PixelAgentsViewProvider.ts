@@ -13,6 +13,7 @@ import {
 import { PixelAgentsServer } from '../server/src/server.js';
 import {
   getProjectDirPath,
+  launchNewTerminal,
   persistAgents,
   removeAgent,
   restoreAgents,
@@ -185,9 +186,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'openClaude') {
-        // Open Copilot Chat instead of spawning a Claude terminal.
-        // The copilot file watcher will automatically detect the new session and
-        // create an agent when Copilot Chat starts writing its JSONL transcript.
+        // Open a NEW Copilot Chat session (not the existing one).
+        // Each new session produces its own JSONL transcript so the file watcher
+        // detects it as an independent agent.
         const initialTask = (message.initialTask as string | undefined)?.trim();
         const suggestedRoomId = message.suggestedRoomId as string | undefined;
         // Store suggested room so the next Copilot session that gets adopted uses it
@@ -195,24 +196,54 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           setPendingCopilotRoomId(suggestedRoomId);
         }
         try {
+          // workbench.action.chat.new opens a fresh independent Copilot Chat session
+          await vscode.commands.executeCommand('workbench.action.chat.new');
           if (initialTask) {
-            // Open chat panel with the task pre-filled as a query
-            await vscode.commands.executeCommand('workbench.action.chat.open', {
-              query: `@agent ${initialTask}`,
-            });
-          } else {
-            await vscode.commands.executeCommand('workbench.action.chat.open');
+            // Copy the task to clipboard so the user can paste into the new session
+            await vscode.env.clipboard.writeText(initialTask);
+            vscode.window.showInformationMessage(
+              'Pixel Agents: New Copilot Chat opened — task copied to clipboard. Paste it to start.',
+            );
           }
         } catch {
-          // Fallback: just focus the Copilot panel
+          // Fallback: open/focus existing panel and pre-fill query if possible
           try {
-            await vscode.commands.executeCommand('workbench.panel.chat.view.copilot.focus');
+            if (initialTask) {
+              await vscode.commands.executeCommand('workbench.action.chat.open', {
+                query: `@agent ${initialTask}`,
+              });
+            } else {
+              await vscode.commands.executeCommand('workbench.action.chat.open');
+            }
           } catch {
             vscode.window.showInformationMessage(
               'Pixel Agents: start a GitHub Copilot Chat session to spawn an agent.',
             );
           }
         }
+      } else if (message.type === 'spawnAgent') {
+        // Spawn a Claude Code terminal agent (from CreateAgentModal "Claude" option).
+        const initialTask = (message.initialTask as string | undefined)?.trim();
+        const roomId = (message.roomId as string | undefined) ?? 'general';
+        await launchNewTerminal(
+          this.nextAgentId,
+          this.nextTerminalIndex,
+          this.agents,
+          this.activeAgentId,
+          this.knownJsonlFiles,
+          this.fileWatchers,
+          this.pollingTimers,
+          this.waitingTimers,
+          this.permissionTimers,
+          this.jsonlPollTimers,
+          this.projectScanTimer,
+          this.webview,
+          this.persistAgents,
+          undefined,
+          false,
+          initialTask,
+          roomId,
+        );
       } else if (message.type === 'focusAgent') {
         const agent = this.agents.get(message.id);
         if (agent) {
