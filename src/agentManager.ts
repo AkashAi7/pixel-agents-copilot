@@ -71,6 +71,7 @@ export async function launchNewTerminal(
   persistAgents: () => void,
   folderPath?: string,
   bypassPermissions?: boolean,
+  initialTask?: string,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
@@ -90,6 +91,17 @@ export async function launchNewTerminal(
     ? `claude --session-id ${sessionId} --dangerously-skip-permissions`
     : `claude --session-id ${sessionId}`;
   terminal.sendText(claudeCmd);
+
+  // If an initial task was provided, send it to the terminal after a short delay
+  // so Claude has time to start its interactive prompt before input arrives.
+  if (initialTask && initialTask.trim()) {
+    // Escape for shell: wrap in single quotes, escape internal single quotes
+    const escaped = initialTask.replace(/'/g, "'\\''");
+    // Use a small delay so Claude is ready to receive input
+    setTimeout(() => {
+      terminal.sendText(`'${escaped}'`);
+    }, 2500);
+  }
 
   const projectDir = getProjectDirPath(cwd);
 

@@ -190,6 +190,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.persistAgents,
           message.folderPath as string | undefined,
           message.bypassPermissions as boolean | undefined,
+          message.initialTask as string | undefined,
         );
         // Register newly created agent(s) with hook handler
         for (const [id, agent] of this.agents) {

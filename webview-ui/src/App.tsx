@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { AgentTaskPanel } from './components/AgentTaskPanel.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
+import { SpawnAgentModal } from './components/SpawnAgentModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
@@ -83,6 +85,8 @@ function App() {
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
+  const [isSpawnModalOpen, setIsSpawnModalOpen] = useState(false);
+  const [taskPanelAgentId, setTaskPanelAgentId] = useState<number | null>(null);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -130,14 +134,18 @@ function App() {
 
   const handleCloseAgent = useCallback((id: number) => {
     vscode.postMessage({ type: 'closeAgent', id });
+    // Also close the task panel if it was showing this agent
+    setTaskPanelAgentId((prev) => (prev === id ? null : prev));
   }, []);
 
   const handleClick = useCallback((agentId: number) => {
-    // If clicked agent is a sub-agent, focus the parent's terminal instead
+    // If clicked agent is a sub-agent, focus the parent instead
     const os = getOfficeState();
     const meta = os.subagentMeta.get(agentId);
     const focusId = meta ? meta.parentAgentId : agentId;
     vscode.postMessage({ type: 'focusAgent', id: focusId });
+    // Open the task panel for the clicked agent (or its parent)
+    setTaskPanelAgentId(focusId);
   }, []);
 
   const officeState = getOfficeState();
@@ -321,7 +329,7 @@ function App() {
 
       <BottomToolbar
         isEditMode={editor.isEditMode}
-        onOpenClaude={editor.handleOpenClaude}
+        onOpenClaude={() => setIsSpawnModalOpen(true)}
         onToggleEditMode={editor.handleToggleEditMode}
         isSettingsOpen={isSettingsOpen}
         onToggleSettings={() => setIsSettingsOpen((v) => !v)}
@@ -361,6 +369,24 @@ function App() {
           setHooksEnabled(newVal);
           vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
         }}
+      />
+
+      {/* Agent real-time task panel (shown when an agent is clicked) */}
+      <AgentTaskPanel
+        agentId={taskPanelAgentId}
+        agentTools={agentTools}
+        agentStatuses={agentStatuses}
+        subagentCharacters={subagentCharacters}
+        subagentTools={subagentTools}
+        onClose={() => setTaskPanelAgentId(null)}
+        onCloseAgent={handleCloseAgent}
+      />
+
+      {/* Spawn agent modal (+ Agent button) */}
+      <SpawnAgentModal
+        isOpen={isSpawnModalOpen}
+        onClose={() => setIsSpawnModalOpen(false)}
+        workspaceFolders={workspaceFolders}
       />
 
       {showMigrationNotice && (
