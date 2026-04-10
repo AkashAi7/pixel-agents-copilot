@@ -35,9 +35,12 @@ import {
   sendFloorTilesToWebview,
   sendWallTilesToWebview,
 } from './assetLoader.js';
+import { AuditLogger } from './auditLogger.js';
 import { readConfig, writeConfig } from './configPersistence.js';
 import {
+  DEFAULT_ROOM_COLOR,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+  GLOBAL_KEY_CUSTOM_ROOMS,
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
@@ -51,6 +54,7 @@ import {
   probeGitHubCopilotChatAPI,
   startCopilotSessionScanning,
 } from './copilotFileWatcher.js';
+import { CustomAgentManager } from './customAgentManager.js';
 import {
   dismissedJsonlFiles,
   ensureProjectScan,
@@ -59,7 +63,8 @@ import {
 } from './fileWatcher.js';
 import type { LayoutWatcher } from './layoutPersistence.js';
 import { readLayoutFromFile, watchLayoutFile, writeLayoutToFile } from './layoutPersistence.js';
-import type { AgentState } from './types.js';
+import { mergeRooms } from './roomManager.js';
+import type { AgentState, TeamRoom } from './types.js';
 
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   nextAgentId = { current: 1 };
@@ -105,6 +110,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // ServerConfig is not stored as a field; use this.pixelAgentsServer?.getConfig() if needed.
   private hookEventHandler: HookEventHandler | null = null;
 
+  // Orchestrator: room management, audit logging, custom agents
+  private auditLogger: AuditLogger | null = null;
+  private customAgentManager: CustomAgentManager | null = null;
+
   constructor(private readonly context: vscode.ExtensionContext) {
     this.initHooks();
   }
@@ -122,6 +131,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   };
 
   private initHooks(): void {
+    this.auditLogger = new AuditLogger(this.context, () => this.webview);
+    this.customAgentManager = new CustomAgentManager(this.context);
+
     this.hookEventHandler = new HookEventHandler(
       this.agents,
       this.waitingTimers,
@@ -361,6 +373,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
         });
+
+        // Send orchestrator: rooms + custom agents
+        this.sendRoomsToWebview();
+        this.sendCustomAgentsToWebview();
 
         // Send workspace folders to webview (only when multi-root)
         const wsFolders = vscode.workspace.workspaceFolders;
@@ -640,6 +656,69 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         } catch {
           vscode.window.showErrorMessage('Pixel Agents: Failed to read or parse layout file.');
         }
+      // ── Orchestrator messages ──────────────────────────────────────────────
+      } else if (message.type === 'requestRooms') {
+        this.sendRoomsToWebview();
+      } else if (message.type === 'requestAudit') {
+        this.auditLogger?.sendRoomAudit(message.roomId as string);
+      } else if (message.type === 'requestCustomAgents') {
+        this.sendCustomAgentsToWebview();
+      } else if (message.type === 'createCustomAgent') {
+        const cfg = this.customAgentManager?.create(
+          message.name as string,
+          message.roomId as string,
+          message.command as string,
+          message.args as string[] | undefined,
+          message.color as string | undefined,
+          message.description as string | undefined,
+        );
+        if (cfg) {
+          this.sendCustomAgentsToWebview();
+        }
+      } else if (message.type === 'updateCustomAgent') {
+        this.customAgentManager?.update(message.id as string, {
+          name: message.name as string | undefined,
+          roomId: message.roomId as string | undefined,
+          command: message.command as string | undefined,
+          color: message.color as string | undefined,
+          description: message.description as string | undefined,
+        });
+        this.sendCustomAgentsToWebview();
+      } else if (message.type === 'deleteCustomAgent') {
+        this.customAgentManager?.delete(message.id as string);
+        this.sendCustomAgentsToWebview();
+      } else if (message.type === 'launchCustomAgent') {
+        this.customAgentManager?.launch(message.id as string);
+      } else if (message.type === 'createCustomRoom') {
+        const customRooms = this.context.globalState.get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, []);
+        const newRoom: TeamRoom = {
+          id: `room-${Date.now()}`,
+          name: message.name as string,
+          color: (message.color as string | undefined) ?? DEFAULT_ROOM_COLOR,
+          icon: (message.icon as string | undefined) ?? '🏠',
+          description: (message.description as string | undefined) ?? '',
+          isBuiltIn: false,
+          createdAt: Date.now(),
+        };
+        customRooms.push(newRoom);
+        void this.context.globalState.update(GLOBAL_KEY_CUSTOM_ROOMS, customRooms);
+        this.sendRoomsToWebview();
+      } else if (message.type === 'deleteCustomRoom') {
+        const customRooms = this.context.globalState
+          .get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, [])
+          .filter((r) => r.id !== (message.roomId as string));
+        void this.context.globalState.update(GLOBAL_KEY_CUSTOM_ROOMS, customRooms);
+        this.sendRoomsToWebview();
+      } else if (message.type === 'setAgentRoom') {
+        const agent = this.agents.get(message.agentId as number);
+        if (agent) {
+          agent.roomId = message.roomId as string;
+          this.persistAgents();
+          // Broadcast updated room assignments
+          this.sendAgentRoomsToWebview();
+        }
+      } else if (message.type === 'clearRoomAudit') {
+        this.auditLogger?.clearRoom(message.roomId as string);
       }
     });
 
@@ -772,6 +851,73 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.layoutWatcher = watchLayoutFile((layout) => {
       console.log('[Pixel Agents] External layout change — pushing to webview');
       this.webview?.postMessage({ type: 'layoutLoaded', layout });
+    });
+  }
+
+  // ── Orchestrator helpers ──────────────────────────────────────────────────
+
+  /** Compute per-room agent counts and send rooms list to webview. */
+  private sendRoomsToWebview(): void {
+    const customRooms = this.context.globalState.get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, []);
+    const rooms = mergeRooms(customRooms);
+
+    // Count agents per room
+    const agentCounts: Record<string, number> = {};
+    for (const room of rooms) agentCounts[room.id] = 0;
+    for (const agent of this.agents.values()) {
+      const rid = agent.roomId ?? 'general';
+      agentCounts[rid] = (agentCounts[rid] ?? 0) + 1;
+    }
+
+    this.webview?.postMessage({ type: 'roomsUpdate', rooms, agentCounts });
+  }
+
+  /** Send the room assignment for every current agent to the webview. */
+  private sendAgentRoomsToWebview(): void {
+    const assignments: Record<number, string> = {};
+    for (const [id, agent] of this.agents) {
+      assignments[id] = agent.roomId ?? 'general';
+    }
+    this.webview?.postMessage({ type: 'agentRooms', assignments });
+  }
+
+  /** Send custom agent configs to webview. */
+  private sendCustomAgentsToWebview(): void {
+    const configs = this.customAgentManager?.getAll() ?? [];
+    this.webview?.postMessage({ type: 'customAgentsUpdate', configs });
+  }
+
+  /**
+   * Log a tool event for a given agent and broadcast to audit + activity feed.
+   * Called by external tool event interceptors / hook handler wrappers.
+   */
+  logAgentToolEvent(
+    agentId: number,
+    toolName: string,
+    done: boolean,
+  ): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    const roomId = agent.roomId ?? 'general';
+    const agentType = agent.agentType ?? (agent.agentSource === 'copilot' ? 'copilot-chat' : 'claude-cli');
+    const label = `Agent #${agentId}`;
+    this.auditLogger?.log(
+      roomId,
+      agentId,
+      agentType,
+      label,
+      done ? 'tool_done' : 'tool_start',
+      toolName,
+    );
+    // Also post a lightweight activity event for the real-time feed
+    this.webview?.postMessage({
+      type: 'activityEvent',
+      agentId,
+      roomId,
+      agentType,
+      event: done ? 'tool_done' : 'tool_start',
+      detail: toolName,
+      timestamp: Date.now(),
     });
   }
 

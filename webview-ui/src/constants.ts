@@ -113,6 +113,35 @@ export const PERMISSION_NOTE_2_START_SEC = 0.12;
 export const PERMISSION_NOTE_DURATION_SEC = 0.15;
 export const PERMISSION_VOLUME = 0.12;
 
+// ── Orchestrator — Room colours ─────────────────────────────
+export const ROOM_COLOR_FRONTEND = '#4FC3F7';
+export const ROOM_COLOR_BACKEND = '#81C784';
+export const ROOM_COLOR_DATA = '#FFB74D';
+export const ROOM_COLOR_SRE = '#F06292';
+export const ROOM_COLOR_QA = '#CE93D8';
+export const ROOM_COLOR_GENERAL = '#90A4AE';
+export const ROOM_COLORS: Record<string, string> = {
+  frontend: ROOM_COLOR_FRONTEND,
+  backend: ROOM_COLOR_BACKEND,
+  data: ROOM_COLOR_DATA,
+  sre: ROOM_COLOR_SRE,
+  qa: ROOM_COLOR_QA,
+  general: ROOM_COLOR_GENERAL,
+};
+export const ROOM_PRESET_COLORS: readonly string[] = [
+  ROOM_COLOR_FRONTEND, ROOM_COLOR_BACKEND, ROOM_COLOR_DATA, ROOM_COLOR_SRE, ROOM_COLOR_QA,
+  ROOM_COLOR_GENERAL, '#FF8A65', '#A5D6A7', '#FFF176', '#80DEEA',
+];
+// Audit event colours
+export const AUDIT_COLOR_AGENT_CREATED = '#4FC3F7';
+export const AUDIT_COLOR_MESSAGE = '#CE93D8';
+export const AUDIT_COLOR_SUBAGENT = '#FFB74D';
+// Activity feed overlay colours
+export const ACTIVITY_FEED_BG = 'rgba(0,0,0,0.75)';
+export const ACTIVITY_TEXT_DIM = 'rgba(255,255,255,0.7)';
+export const ACTIVITY_TEXT_FAINT = 'rgba(255,255,255,0.4)';
+export const COLOR_WHITE = '#fff';
+
 // ── Furniture Animation ─────────────────────────────────────
 export const FURNITURE_ANIM_INTERVAL_SEC = 0.2;
 

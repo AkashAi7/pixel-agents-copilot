@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { ActivityFeed } from './components/ActivityFeed.js';
 import { AgentTaskPanel } from './components/AgentTaskPanel.js';
+import { AuditPanel } from './components/AuditPanel.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
+import { CreateAgentModal } from './components/CreateAgentModal.js';
+import { CreateRoomModal } from './components/CreateRoomModal.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { RoomsPanel } from './components/RoomsPanel.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { SpawnAgentModal } from './components/SpawnAgentModal.js';
 import { Tooltip } from './components/Tooltip.js';
@@ -73,6 +78,11 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    rooms,
+    agentCounts,
+    agentRooms,
+    auditEntries,
+    activityFeed,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -87,6 +97,10 @@ function App() {
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
   const [isSpawnModalOpen, setIsSpawnModalOpen] = useState(false);
   const [taskPanelAgentId, setTaskPanelAgentId] = useState<number | null>(null);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [isCreateAgentOpen, setIsCreateAgentOpen] = useState(false);
+  const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -327,9 +341,50 @@ function App() {
         </div>
       </Modal>
 
+      <RoomsPanel
+        rooms={rooms}
+        agentCounts={agentCounts}
+        selectedRoomId={selectedRoomId}
+        onSelectRoom={(id) => {
+          setSelectedRoomId(id);
+          if (id) setIsAuditOpen(true);
+        }}
+        agentRooms={agentRooms}
+        onCreateRoom={() => setIsCreateRoomOpen(true)}
+      />
+
+      {!editor.isEditMode && (
+        <ActivityFeed events={activityFeed} selectedRoomId={selectedRoomId} />
+      )}
+
+      {isAuditOpen && (
+        <AuditPanel
+          room={rooms.find((r) => r.id === selectedRoomId) ?? null}
+          entries={selectedRoomId ? (auditEntries[selectedRoomId] ?? []) : []}
+          onClose={() => setIsAuditOpen(false)}
+          onClear={() => {
+            if (selectedRoomId) {
+              vscode.postMessage({ type: 'clearRoomAudit', roomId: selectedRoomId });
+            }
+          }}
+        />
+      )}
+
+      {isCreateAgentOpen && (
+        <CreateAgentModal
+          rooms={rooms}
+          selectedRoomId={selectedRoomId}
+          onClose={() => setIsCreateAgentOpen(false)}
+        />
+      )}
+
+      {isCreateRoomOpen && (
+        <CreateRoomModal onClose={() => setIsCreateRoomOpen(false)} />
+      )}
+
       <BottomToolbar
         isEditMode={editor.isEditMode}
-        onOpenClaude={() => setIsSpawnModalOpen(true)}
+        onOpenClaude={() => setIsCreateAgentOpen(true)}
         onToggleEditMode={editor.handleToggleEditMode}
         isSettingsOpen={isSettingsOpen}
         onToggleSettings={() => setIsSettingsOpen((v) => !v)}

@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+export type AgentType = 'claude-cli' | 'copilot-chat' | 'local-cli' | 'custom';
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -9,6 +11,10 @@ export interface AgentState {
   isExternal: boolean;
   /** Which agent runtime produced this session's JSONL file */
   agentSource?: 'claude' | 'copilot';
+  /** Orchestrator agent type classification */
+  agentType?: AgentType;
+  /** Team room this agent is assigned to */
+  roomId?: string;
   projectDir: string;
   jsonlFile: string;
   fileOffset: number;
@@ -43,8 +49,46 @@ export interface PersistedAgent {
   isExternal?: boolean;
   /** Which agent runtime produced this session's JSONL file */
   agentSource?: 'claude' | 'copilot';
+  /** Orchestrator agent type */
+  agentType?: AgentType;
+  /** Team room assignment */
+  roomId?: string;
   jsonlFile: string;
   projectDir: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+}
+
+// ── Orchestrator Types ──────────────────────────────────────────────────────
+
+export interface TeamRoom {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  description: string;
+  isBuiltIn: boolean;
+  createdAt?: number;
+}
+
+export interface AuditEntry {
+  id: string;
+  timestamp: number;
+  roomId: string;
+  agentId: number;
+  agentType: AgentType;
+  agentLabel: string;
+  event: 'tool_start' | 'tool_done' | 'agent_created' | 'agent_removed' | 'message' | 'subagent_spawn';
+  detail: string;
+}
+
+export interface CustomAgentConfig {
+  id: string;
+  name: string;
+  roomId: string;
+  command: string;
+  args?: string[];
+  color?: string;
+  description?: string;
+  createdAt: number;
 }

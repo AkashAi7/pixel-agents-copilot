@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { processCopilotLine } from './copilotTranscriptParser.js';
+import { inferRoomFromText } from './roomManager.js';
 import type { AgentState } from './types.js';
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -229,6 +230,23 @@ function readCopilotNewLines(
 
 // ── Agent creation ─────────────────────────────────────────────────────────
 
+/**
+ * Read the first 8 KB of a Copilot session JSONL and extract any text that can
+ * help infer the team room (e.g. first user message content).
+ */
+function inferRoomIdFromFile(jsonlFile: string): string {
+  try {
+    const fd = fs.openSync(jsonlFile, 'r');
+    const buf = Buffer.alloc(8192);
+    const bytesRead = fs.readSync(fd, buf, 0, 8192, 0);
+    fs.closeSync(fd);
+    const text = buf.slice(0, bytesRead).toString('utf-8');
+    return inferRoomFromText(text);
+  } catch {
+    return 'general';
+  }
+}
+
 function createCopilotAgent(
   jsonlFile: string,
   nextAgentIdRef: { current: number },
@@ -256,6 +274,8 @@ function createCopilotAgent(
     terminalRef: undefined,
     isExternal: true,
     agentSource: 'copilot',
+    agentType: 'copilot-chat',
+    roomId: inferRoomIdFromFile(jsonlFile),
     projectDir: path.dirname(jsonlFile),
     jsonlFile,
     fileOffset,
@@ -279,13 +299,15 @@ function createCopilotAgent(
   agents.set(id, agent);
   persistAgents();
 
-  console.log(`[Pixel Agents] Copilot agent ${id} created for ${path.basename(jsonlFile)}`);
+  console.log(`[Pixel Agents] Copilot agent ${id} created for ${path.basename(jsonlFile)} → room: ${agent.roomId ?? 'general'}`);
 
   webview?.postMessage({
     type: 'agentCreated',
     id,
     isExternal: true,
     agentSource: 'copilot',
+    agentType: 'copilot-chat',
+    roomId: agent.roomId ?? 'general',
   });
 
   onAgentCreated?.(agent);

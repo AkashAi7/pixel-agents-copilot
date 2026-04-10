@@ -154,8 +154,13 @@ export function parseCopilotLine(line: string): CopilotLineResult {
 
 // ── Line processor (drives AgentState and webview messages) ────────────────
 
-/** Idle delay before marking a Copilot agent as "waiting" when no tool records arrive. */
-const COPILOT_IDLE_WAIT_MS = 4_000;
+/**
+ * Fallback delay before marking a Copilot agent as "waiting" when no tool records arrive.
+ * This only fires if turn_complete never arrives (e.g. extension reload mid-session).
+ * Copilot's "Evaluating" phase (model thinking between/after tools) writes nothing to JSONL,
+ * so the timer must be long enough to cover the full evaluation window — not just tool gaps.
+ */
+const COPILOT_IDLE_WAIT_MS = 60_000;
 
 /**
  * Process one new JSONL line from a Copilot Chat session file.
@@ -237,8 +242,9 @@ export function processCopilotLine(
         webview?.postMessage({ type: 'agentToolDone', id: agentId, toolId: callId });
       }, 300);
 
-      // After all visible tools clear, start an idle timer to mark waiting
-      // (turn_complete is the authoritative signal but this acts as fallback)
+      // Keep agent active through the "Evaluating" gap between tools.
+      // turn_complete is the authoritative idle signal; this long fallback only fires
+      // if turn_complete never arrives (e.g. extension reload mid-session).
       startWaitingTimer(agentId, COPILOT_IDLE_WAIT_MS, agents, waitingTimers, webview);
       break;
     }

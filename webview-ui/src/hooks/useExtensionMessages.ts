@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import type { ActivityEvent } from '../components/ActivityFeed.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setFloorSprites } from '../office/floorTiles.js';
@@ -16,6 +17,38 @@ export interface SubagentCharacter {
   parentAgentId: number;
   parentToolId: string;
   label: string;
+}
+
+export interface TeamRoom {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  description: string;
+  isBuiltIn: boolean;
+  createdAt?: number;
+}
+
+export interface AuditEntry {
+  id: string;
+  timestamp: number;
+  roomId: string;
+  agentId: number;
+  agentType: string;
+  agentLabel: string;
+  event: string;
+  detail: string;
+}
+
+export interface CustomAgentConfig {
+  id: string;
+  name: string;
+  roomId: string;
+  command: string;
+  args?: string[];
+  color?: string;
+  description?: string;
+  createdAt: number;
 }
 
 interface FurnitureAsset {
@@ -66,6 +99,14 @@ interface ExtensionMessageState {
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  // Orchestrator
+  rooms: TeamRoom[];
+  agentCounts: Record<string, number>;
+  agentRooms: Record<number, string>;
+  agentTypes: Record<number, string>;
+  auditEntries: Record<string, AuditEntry[]>;
+  activityFeed: ActivityEvent[];
+  customAgents: CustomAgentConfig[];
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -103,6 +144,15 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+
+  // Orchestrator state
+  const [rooms, setRooms] = useState<TeamRoom[]>([]);
+  const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
+  const [agentRooms, setAgentRooms] = useState<Record<number, string>>({});
+  const [agentTypes, setAgentTypes] = useState<Record<number, string>>({});
+  const [auditEntries, setAuditEntries] = useState<Record<string, AuditEntry[]>>({});
+  const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
+  const [customAgents, setCustomAgents] = useState<CustomAgentConfig[]>([]);
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -152,8 +202,14 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
         const folderName = msg.folderName as string | undefined;
+        const roomId = (msg.roomId as string | undefined) ?? 'general';
+        const agentType = msg.agentType as string | undefined;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
         setSelectedAgent(id);
+        setAgentRooms((prev) => ({ ...prev, [id]: roomId }));
+        if (agentType) {
+          setAgentTypes((prev) => ({ ...prev, [id]: agentType }));
+        }
         os.addAgent(id, undefined, undefined, undefined, undefined, folderName);
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {
@@ -199,6 +255,13 @@ export function useExtensionMessages(
             seatId: m?.seatId,
             folderName: folderNames[id],
           });
+        }
+        // Orchestrator: update room and type assignments from existing agents
+        if (msg.agentRooms) {
+          setAgentRooms(msg.agentRooms as Record<number, string>);
+        }
+        if (msg.agentTypes) {
+          setAgentTypes(msg.agentTypes as Record<number, string>);
         }
         setAgents((prev) => {
           const ids = new Set(prev);
@@ -447,6 +510,35 @@ export function useExtensionMessages(
         } catch (err) {
           console.error(`❌ Webview: Error processing furnitureAssetsLoaded:`, err);
         }
+      // ── Orchestrator messages ──────────────────────────────────────────────
+      } else if (msg.type === 'roomsUpdate') {
+        setRooms(msg.rooms as TeamRoom[]);
+        setAgentCounts(msg.agentCounts as Record<string, number>);
+      } else if (msg.type === 'agentRooms') {
+        setAgentRooms(msg.assignments as Record<number, string>);
+      } else if (msg.type === 'auditEntry') {
+        const entry = msg.entry as AuditEntry;
+        setAuditEntries((prev) => {
+          const list = prev[entry.roomId] ?? [];
+          return { ...prev, [entry.roomId]: [...list, entry].slice(-200) };
+        });
+      } else if (msg.type === 'auditEntries') {
+        const roomId = msg.roomId as string;
+        const entries = msg.entries as AuditEntry[];
+        setAuditEntries((prev) => ({ ...prev, [roomId]: entries }));
+      } else if (msg.type === 'activityEvent') {
+        const evt: ActivityEvent = {
+          id: `${msg.timestamp as number}-${msg.agentId as number}-${Math.random().toString(36).slice(2, 5)}`,
+          agentId: msg.agentId as number,
+          roomId: msg.roomId as string,
+          agentType: msg.agentType as string,
+          event: msg.event as string,
+          detail: msg.detail as string,
+          timestamp: msg.timestamp as number,
+        };
+        setActivityFeed((prev) => [...prev, evt].slice(-100));
+      } else if (msg.type === 'customAgentsUpdate') {
+        setCustomAgents(msg.configs as CustomAgentConfig[]);
       }
     };
     window.addEventListener('message', handler);
@@ -475,5 +567,13 @@ export function useExtensionMessages(
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    // Orchestrator
+    rooms,
+    agentCounts,
+    agentRooms,
+    agentTypes,
+    auditEntries,
+    activityFeed,
+    customAgents,
   };
 }
