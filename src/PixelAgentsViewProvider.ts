@@ -47,6 +47,7 @@ import {
   LAYOUT_REVISION_KEY,
   WORKSPACE_KEY_AGENT_SEATS,
 } from './constants.js';
+import { dismissCopilotAgent, startCopilotSessionScanning } from './copilotFileWatcher.js';
 import {
   dismissedJsonlFiles,
   ensureProjectScan,
@@ -69,6 +70,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   waitingTimers = new Map<number, ReturnType<typeof setTimeout>>();
   jsonlPollTimers = new Map<number, ReturnType<typeof setInterval>>();
   permissionTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  // Copilot Chat session polling timers (separate from Claude Code timers)
+  copilotPollingTimers = new Map<number, ReturnType<typeof setInterval>>();
+  copilotScannerCleanup: (() => void) | null = null;
 
   // /clear detection: project-level scan for new JSONL files
   activeAgentId = { current: null as number | null };
@@ -201,8 +206,18 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (agent) {
           if (agent.terminalRef) {
             agent.terminalRef.dispose();
+          } else if (agent.agentSource === 'copilot') {
+            // Copilot agent — use dedicated dismissal so the scanner won't re-adopt it
+            dismissCopilotAgent(
+              message.id,
+              this.agents,
+              this.copilotPollingTimers,
+              this.waitingTimers,
+              this.persistAgents,
+              this.webview,
+            );
           } else {
-            // External agent — remove from tracking and dismiss the file
+            // External Claude Code agent — remove from tracking and dismiss the file
             // so the external scanner doesn't re-adopt it
             dismissedJsonlFiles.set(agent.jsonlFile, Date.now());
             removeAgent(
@@ -427,6 +442,18 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.waitingTimers,
             this.permissionTimers,
             this.jsonlPollTimers,
+            this.webview,
+            this.persistAgents,
+          );
+        }
+
+        // Start Copilot Chat session scanning (auto-discovers active chat sessions)
+        if (!this.copilotScannerCleanup) {
+          this.copilotScannerCleanup = startCopilotSessionScanning(
+            this.nextAgentId,
+            this.agents,
+            this.copilotPollingTimers,
+            this.waitingTimers,
             this.webview,
             this.persistAgents,
           );
@@ -772,6 +799,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       clearInterval(this.staleCheckTimer);
       this.staleCheckTimer = null;
     }
+    if (this.copilotScannerCleanup) {
+      this.copilotScannerCleanup();
+      this.copilotScannerCleanup = null;
+    }
+    for (const timer of this.copilotPollingTimers.values()) {
+      clearInterval(timer);
+    }
+    this.copilotPollingTimers.clear();
   }
 }
 

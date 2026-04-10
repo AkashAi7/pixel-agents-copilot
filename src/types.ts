@@ -7,6 +7,8 @@ export interface AgentState {
   terminalRef?: vscode.Terminal;
   /** Whether this agent was detected from an external source (VS Code extension panel, etc.) */
   isExternal: boolean;
+  /** Which agent runtime produced this session's JSONL file */
+  agentSource?: 'claude' | 'copilot';
   projectDir: string;
   jsonlFile: string;
   fileOffset: number;
@@ -39,6 +41,8 @@ export interface PersistedAgent {
   terminalName: string;
   /** Whether this agent was detected from an external source */
   isExternal?: boolean;
+  /** Which agent runtime produced this session's JSONL file */
+  agentSource?: 'claude' | 'copilot';
   jsonlFile: string;
   projectDir: string;
   /** Workspace folder name (only set for multi-root workspaces) */

@@ -1,41 +1,62 @@
 <h1 align="center">
-    <a href="https://github.com/pablodelucca/pixel-agents/discussions">
-        <img src="webview-ui/public/banner.png" alt="Pixel Agents">
-    </a>
+    <img src="webview-ui/public/banner.png" alt="Pixel Agents">
 </h1>
 
 <h2 align="center" style="padding-bottom: 20px;">
-  The game interface where AI agents build real things
+  The game interface where AI agents build real things — now with GitHub Copilot support
 </h2>
 
 <div align="center" style="margin-top: 25px;">
 
-[![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Fversion.json)](https://github.com/pablodelucca/pixel-agents/releases)
-[![marketplaces](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Finstalls.json)](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents)
-[![stars](https://img.shields.io/github/stars/pablodelucca/pixel-agents?logo=github&color=0183ff&style=flat)](https://github.com/pablodelucca/pixel-agents/stargazers)
-[![license](https://img.shields.io/github/license/pablodelucca/pixel-agents?color=0183ff&style=flat)](https://github.com/pablodelucca/pixel-agents/blob/main/LICENSE)
-[![good first issues](https://img.shields.io/github/issues/pablodelucca/pixel-agents/good%20first%20issue?color=7057ff&label=good%20first%20issues)](https://github.com/pablodelucca/pixel-agents/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
+[![stars](https://img.shields.io/github/stars/AkashAi7/pixel-agents-copilot?logo=github&color=0183ff&style=flat)](https://github.com/AkashAi7/pixel-agents-copilot/stargazers)
+[![license](https://img.shields.io/github/license/AkashAi7/pixel-agents-copilot?color=0183ff&style=flat)](https://github.com/AkashAi7/pixel-agents-copilot/blob/main/LICENSE)
 
 </div>
 
 <div align="center">
-<a href="https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents">🛒 VS Code Marketplace</a> • <a href="https://github.com/pablodelucca/pixel-agents/discussions">💬 Discussions</a> • <a href="https://github.com/pablodelucca/pixel-agents/issues">🐛 Issues</a> • <a href="CONTRIBUTING.md">🤝 Contributing</a> • <a href="CHANGELOG.md">📋 Changelog</a>
+<a href="https://github.com/AkashAi7/pixel-agents-copilot/issues">🐛 Issues</a> • <a href="CONTRIBUTING.md">🤝 Contributing</a> • <a href="CHANGELOG.md">📋 Changelog</a>
 </div>
+
+> **Fork of [pablodelucca/pixel-agents](https://github.com/pablodelucca/pixel-agents)** — all credit for the original pixel art office concept, architecture, character sprites, and Claude Code adapter belongs to [@pablodelucca](https://github.com/pablodelucca) and contributors. This fork adds a **GitHub Copilot Chat adapter** so the same animated office works with GHCP agent sessions.
 
 <br/>
 
 Pixel Agents turns multi-agent AI systems into something you can actually see and manage. Each agent becomes a character in a pixel art office. They walk around, sit at their desk, and visually reflect what they are doing — typing when writing code, reading when searching files, waiting when it needs your attention.
 
-Right now it works as a VS Code extension with Claude Code. The vision though, is a fully agent-agnostic, platform-agnostic interface for orchestrating any AI agents, deployable anywhere.
-
-This is the source code for the free Pixel Agents extension for VS Code — install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents) with the full furniture catalog included.
+This fork extends the original to support **both Claude Code and GitHub Copilot Chat (Agent mode)**.
 
 ![Pixel Agents screenshot](webview-ui/public/Screenshot.jpg)
 
+## What's New in This Fork — GitHub Copilot Support
+
+The original extension only works with Claude Code. This fork adds a complete **Copilot Chat adapter** (`src/copilotTranscriptParser.ts` + `src/copilotFileWatcher.ts`) that watches GitHub Copilot Chat JSONL session files and drives the same character animations.
+
+| Feature                           | Claude Code | GitHub Copilot Chat |
+| --------------------------------- | ----------- | ------------------- |
+| Spawn character automatically     | ✅          | ✅                  |
+| Animate per tool call             | ✅          | ✅                  |
+| Show tool status in speech bubble | ✅          | ✅                  |
+| Waiting / idle state              | ✅          | ✅                  |
+| Dismiss character with ×          | ✅          | ✅                  |
+
+**How the Copilot adapter works:** VS Code Copilot Chat writes JSONL delta-patch session logs to `%APPDATA%\Code\User\workspaceStorage\<hash>\chatSessions\<id>.jsonl`. The adapter scans these files every 3 s, polls active ones every 500 ms, and parses `toolInvocationSerialized` records (kind 2) to fire animation events — the exact same `AgentState` machine that the Claude Code adapter uses.
+
+Supported Copilot tool IDs include: `copilot_readFile`, `copilot_semanticSearch`, `copilot_grepSearch`, `copilot_replaceString`, `copilot_createFile`, `copilot_runInTerminal`, `copilot_getErrors`, `copilot_runTests`, and 15+ more.
+
+### Demo script
+
+```powershell
+# Simulates two concurrent Copilot sessions with realistic tool sequences
+.\scripts\demo-copilot-session.ps1
+```
+
+Then open the Pixel Agents panel in the Extension Development Host to watch two characters animate live.
+
 ## Features
 
-- **One agent, one character** — every Claude Code terminal gets its own animated character
+- **One agent, one character** — every Claude Code terminal or active Copilot Chat session gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
+- **GitHub Copilot Chat support** — Copilot agent sessions auto-detected and visualized, no configuration needed
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
 - **Sound notifications** — optional chime when an agent finishes its turn
@@ -51,18 +72,17 @@ This is the source code for the free Pixel Agents extension for VS Code — inst
 ## Requirements
 
 - VS Code 1.105.0 or later
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- For **Claude Code** agents: [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- For **GitHub Copilot** agents: [GitHub Copilot Chat](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat) extension installed and signed in; use Agent mode so tool calls fire
 - **Platform**: Windows, Linux, and macOS are supported
 
 ## Getting Started
 
-If you just want to use Pixel Agents, the easiest way is to download the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents). If you want to play with the code, develop, or contribute, then:
-
 ### Install from source
 
 ```bash
-git clone https://github.com/pablodelucca/pixel-agents.git
-cd pixel-agents
+git clone https://github.com/AkashAi7/pixel-agents-copilot.git
+cd pixel-agents-copilot
 npm install
 cd webview-ui && npm install && cd ..
 npm run build
@@ -73,10 +93,11 @@ Then press **F5** in VS Code to launch the Extension Development Host.
 ### Usage
 
 1. Open the **Pixel Agents** panel (it appears in the bottom panel area alongside your terminal)
-2. Click **+ Agent** to spawn a new Claude Code terminal and its character. Right-click for the option to launch with `--dangerously-skip-permissions` (bypasses all tool approval prompts)
-3. Start coding with Claude — watch the character react in real time
-4. Click a character to select it, then click a seat to reassign it
-5. Click **Layout** to open the office editor and customize your space
+2. **For Claude Code** — click **+ Agent** to spawn a new Claude Code terminal and its character
+3. **For GitHub Copilot** — just start a Copilot Chat conversation in Agent mode; the extension auto-detects active sessions within ~3 seconds and spawns characters automatically
+4. Watch characters react to tool calls in real time
+5. Click a character to select it, then click a seat to reassign it
+6. Click **Layout** to open the office editor and customize your space
 
 ## Layout Editor
 
@@ -104,7 +125,13 @@ Characters are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-
 
 ## How It Works
 
-Pixel Agents watches Claude Code's JSONL transcript files to track what each agent is doing. When an agent uses a tool (like writing a file or running a command), the extension detects it and updates the character's animation accordingly. No modifications to Claude Code are needed — it's purely observational.
+### Claude Code adapter (original)
+
+Pixel Agents watches Claude Code's JSONL transcript files to track what each agent is doing. When an agent uses a tool (like writing a file or running a command), the extension detects it and updates the character's animation accordingly. No modifications to Claude Code are needed.
+
+### GitHub Copilot adapter (this fork)
+
+VS Code Copilot Chat writes JSONL delta-patch session logs to `workspaceStorage/<hash>/chatSessions/<id>.jsonl`. The Copilot adapter (`src/copilotFileWatcher.ts` + `src/copilotTranscriptParser.ts`) scans these files, parses `toolInvocationSerialized` records, and drives the same `AgentState` machine — so Copilot agents animate identically to Claude agents.
 
 The webview runs a lightweight game loop with canvas rendering, BFS pathfinding, and a character state machine (idle → walk → type/read). Everything is pixel-perfect at integer zoom levels.
 
@@ -145,30 +172,24 @@ For this to work, the architecture needs to be modular at every level:
 
 We're actively working on the core module and adapter architecture that makes this possible. If you're interested to talk about this further, please visit our [Discussions Section](https://github.com/pablodelucca/pixel-agents/discussions).
 
-
 ## Community & Contributing
 
-Use **[Issues](https://github.com/pablodelucca/pixel-agents/issues)** to report bugs or request features. Join **[Discussions](https://github.com/pablodelucca/pixel-agents/discussions)** for questions and conversations.
+Use **[Issues](https://github.com/AkashAi7/pixel-agents-copilot/issues)** to report bugs or request features.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to contribute.
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
 
-## Supporting the Project
+## Credits & Attribution
 
-If you find Pixel Agents useful, consider supporting its development:
+This project is a fork of **[pablodelucca/pixel-agents](https://github.com/pablodelucca/pixel-agents)** by [@pablodelucca](https://github.com/pablodelucca).
 
-<a href="https://github.com/sponsors/pablodelucca">
-  <img src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github" alt="GitHub Sponsors">
-</a>
-<a href="https://ko-fi.com/pablodelucca">
-  <img src="https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi" alt="Ko-fi">
-</a>
+All original work — the pixel art office concept, Claude Code adapter, webview rendering engine, office layout editor, furniture catalog, character sprites, and the full VS Code extension infrastructure — belongs to the original author and contributors.
 
-## Star History
+This fork adds the GitHub Copilot Chat adapter (`src/copilotFileWatcher.ts`, `src/copilotTranscriptParser.ts`) and the demo simulation script (`scripts/demo-copilot-session.ps1`).
 
-[![Star History Chart](https://api.star-history.com/svg?repos=pablodelucca/pixel-agents&type=Date)](https://www.star-history.com/?repos=pablodelucca%2Fpixel-agents&type=date&legend=bottom-right)
+Character sprites are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE). Original work copyright © pablodelucca and contributors.

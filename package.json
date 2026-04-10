@@ -1,12 +1,12 @@
 {
-  "name": "pixel-agents",
-  "displayName": "Pixel Agents",
-  "description": "Pixel art office where your Claude Code agents come to life as animated characters",
+  "name": "pixel-agents-copilot",
+  "displayName": "Pixel Agents (+ Copilot)",
+  "description": "Pixel art office where your AI agents (Claude Code + GitHub Copilot Chat) come to life as animated characters",
   "version": "1.2.0",
-  "publisher": "pablodelucca",
+  "publisher": "AkashAi7",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pablodelucca/pixel-agents"
+    "url": "https://github.com/AkashAi7/pixel-agents-copilot"
   },
   "icon": "icon.png",
   "license": "MIT",

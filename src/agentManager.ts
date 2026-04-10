@@ -247,6 +247,7 @@ export function persistAgents(
       sessionId: agent.sessionId,
       terminalName: agent.terminalRef?.name ?? '',
       isExternal: agent.isExternal || undefined,
+      agentSource: agent.agentSource,
       jsonlFile: agent.jsonlFile,
       projectDir: agent.projectDir,
       folderName: agent.folderName,
@@ -308,6 +309,7 @@ export function restoreAgents(
       sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
       terminalRef: terminal,
       isExternal,
+      agentSource: p.agentSource,
       projectDir: p.projectDir,
       jsonlFile: p.jsonlFile,
       fileOffset: 0,
@@ -469,15 +471,19 @@ export function sendExistingAgents(
     Record<string, { palette?: number; seatId?: string }>
   >(WORKSPACE_KEY_AGENT_SEATS, {});
 
-  // Include folderName and isExternal per agent
+  // Include folderName, isExternal, and agentSource per agent
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const agentSources: Record<number, string> = {};
   for (const [id, agent] of agents) {
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
+    }
+    if (agent.agentSource) {
+      agentSources[id] = agent.agentSource;
     }
   }
   console.log(
@@ -490,6 +496,7 @@ export function sendExistingAgents(
     agentMeta,
     folderNames,
     externalAgents,
+    agentSources,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.
