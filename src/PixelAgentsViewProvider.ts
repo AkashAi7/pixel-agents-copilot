@@ -13,7 +13,6 @@ import {
 import { PixelAgentsServer } from '../server/src/server.js';
 import {
   getProjectDirPath,
-  launchNewTerminal,
   persistAgents,
   removeAgent,
   restoreAgents,
@@ -173,29 +172,29 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'openClaude') {
-        const prevAgentIds = new Set(this.agents.keys());
-        await launchNewTerminal(
-          this.nextAgentId,
-          this.nextTerminalIndex,
-          this.agents,
-          this.activeAgentId,
-          this.knownJsonlFiles,
-          this.fileWatchers,
-          this.pollingTimers,
-          this.waitingTimers,
-          this.permissionTimers,
-          this.jsonlPollTimers,
-          this.projectScanTimer,
-          this.webview,
-          this.persistAgents,
-          message.folderPath as string | undefined,
-          message.bypassPermissions as boolean | undefined,
-          message.initialTask as string | undefined,
-        );
-        // Register newly created agent(s) with hook handler
-        for (const [id, agent] of this.agents) {
-          if (!prevAgentIds.has(id)) {
-            this.registerAgentHook(agent);
+        // Open Copilot Chat instead of spawning a Claude terminal.
+        // The copilot file watcher will automatically detect the new session and
+        // create an agent when Copilot Chat starts writing its JSONL transcript.
+        const initialTask = (message.initialTask as string | undefined)?.trim();
+        try {
+          if (initialTask) {
+            // Open chat panel with the task pre-filled as a query
+            await vscode.commands.executeCommand('workbench.action.chat.open', {
+              query: `@agent ${initialTask}`,
+            });
+          } else {
+            await vscode.commands.executeCommand('workbench.action.chat.open');
+          }
+        } catch {
+          // Fallback: just focus the Copilot panel
+          try {
+            await vscode.commands.executeCommand(
+              'workbench.panel.chat.view.copilot.focus',
+            );
+          } catch {
+            vscode.window.showInformationMessage(
+              'Pixel Agents: start a GitHub Copilot Chat session to spawn an agent.',
+            );
           }
         }
       } else if (message.type === 'focusAgent') {

@@ -74,7 +74,7 @@ export function SpawnAgentModal({ isOpen, onClose, workspaceFolders }: SpawnAgen
           className="flex items-center justify-between px-16 py-10"
           style={{ borderBottom: '2px solid var(--color-border)' }}
         >
-          <span className="text-base">Spawn New Agent</span>
+          <span className="text-base">Open Copilot Chat</span>
           <Button variant="ghost" size="icon" onClick={onClose}>
             ×
           </Button>
@@ -118,7 +118,7 @@ export function SpawnAgentModal({ isOpen, onClose, workspaceFolders }: SpawnAgen
             <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
               Initial task{' '}
               <span className="text-2xs" style={{ color: 'var(--color-text-muted)', opacity: 0.6 }}>
-                (optional — Ctrl+Enter to launch)
+                (optional — Ctrl+Enter to open)
               </span>
             </label>
             <textarea
@@ -126,7 +126,7 @@ export function SpawnAgentModal({ isOpen, onClose, workspaceFolders }: SpawnAgen
               value={task}
               onChange={(e) => setTask(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Describe what you want the agent to do…"
+              placeholder="Describe what you want Copilot to do…"
               rows={4}
               className="w-full resize-none text-sm p-8 font-pixel"
               style={{
@@ -138,24 +138,10 @@ export function SpawnAgentModal({ isOpen, onClose, workspaceFolders }: SpawnAgen
             />
           </div>
 
-          {/* Bypass permissions toggle */}
-          <label
-            className="flex items-center gap-8 cursor-pointer select-none"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
-            <input
-              type="checkbox"
-              checked={bypassPermissions}
-              onChange={(e) => setBypassPermissions(e.target.checked)}
-              style={{ accentColor: 'var(--color-accent)', width: '14px', height: '14px' }}
-            />
-            <span className="text-xs">
-              Skip permissions mode{' '}
-              <span className="text-2xs" style={{ color: 'var(--color-warning)' }}>
-                ⚠
-              </span>
-            </span>
-          </label>
+          {/* Info hint */}
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)', opacity: 0.8 }}>
+            Copilot Chat will open. Your agent will appear automatically once the session begins.
+          </p>
         </div>
 
         {/* Footer */}
@@ -170,9 +156,8 @@ export function SpawnAgentModal({ isOpen, onClose, workspaceFolders }: SpawnAgen
             variant="accent"
             size="md"
             onClick={handleLaunch}
-            disabled={hasMultipleFolders && !selectedFolder}
           >
-            Launch
+            Open Chat
           </Button>
         </div>
       </div>
