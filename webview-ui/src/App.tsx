@@ -351,11 +351,21 @@ function App() {
         }}
         agentRooms={agentRooms}
         onCreateRoom={() => setIsCreateRoomOpen(true)}
+        onSpawnAgentInRoom={(roomId) => {
+          setSelectedRoomId(roomId);
+          setIsCreateAgentOpen(true);
+        }}
+        onViewRoomLogs={(roomId) => {
+          setSelectedRoomId(roomId);
+          vscode.postMessage({ type: 'requestAudit', roomId });
+          setIsAuditOpen(true);
+        }}
+        onDeleteRoom={(roomId) => {
+          vscode.postMessage({ type: 'deleteCustomRoom', roomId });
+        }}
       />
 
-      {!editor.isEditMode && (
-        <ActivityFeed events={activityFeed} selectedRoomId={selectedRoomId} />
-      )}
+      {!editor.isEditMode && <ActivityFeed events={activityFeed} selectedRoomId={selectedRoomId} />}
 
       {isAuditOpen && (
         <AuditPanel
@@ -378,9 +388,7 @@ function App() {
         />
       )}
 
-      {isCreateRoomOpen && (
-        <CreateRoomModal onClose={() => setIsCreateRoomOpen(false)} />
-      )}
+      {isCreateRoomOpen && <CreateRoomModal onClose={() => setIsCreateRoomOpen(false)} />}
 
       <BottomToolbar
         isEditMode={editor.isEditMode}
@@ -433,8 +441,15 @@ function App() {
         agentStatuses={agentStatuses}
         subagentCharacters={subagentCharacters}
         subagentTools={subagentTools}
+        agentRooms={agentRooms}
         onClose={() => setTaskPanelAgentId(null)}
         onCloseAgent={handleCloseAgent}
+        onViewRoomLog={(roomId) => {
+          setSelectedRoomId(roomId);
+          vscode.postMessage({ type: 'requestAudit', roomId });
+          setIsAuditOpen(true);
+          setTaskPanelAgentId(null);
+        }}
       />
 
       {/* Spawn agent modal (+ Agent button) */}

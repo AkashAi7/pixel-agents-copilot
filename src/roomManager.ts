@@ -74,48 +74,165 @@ const ROOM_KEYWORDS: { roomId: string; keywords: string[] }[] = [
   {
     roomId: 'frontend',
     keywords: [
-      'react', 'vue', 'angular', 'svelte', 'typescript', 'tsx', 'jsx',
-      'css', 'scss', 'tailwind', 'html', 'dom', 'component', 'ui', 'ux',
-      'button', 'form', 'modal', 'layout', 'style', 'animation', 'design',
-      'next.js', 'nextjs', 'vite', 'webpack', 'storybook', 'figma',
+      'react',
+      'vue',
+      'angular',
+      'svelte',
+      'typescript',
+      'tsx',
+      'jsx',
+      'css',
+      'scss',
+      'tailwind',
+      'html',
+      'dom',
+      'component',
+      'ui',
+      'ux',
+      'button',
+      'form',
+      'modal',
+      'layout',
+      'style',
+      'animation',
+      'design',
+      'next.js',
+      'nextjs',
+      'vite',
+      'webpack',
+      'storybook',
+      'figma',
     ],
   },
   {
     roomId: 'backend',
     keywords: [
-      'api', 'server', 'express', 'fastapi', 'django', 'flask', 'nest',
-      'rest', 'graphql', 'grpc', 'endpoint', 'route', 'controller',
-      'middleware', 'auth', 'jwt', 'oauth', 'backend', 'service', 'microservice',
-      'node', 'python', 'go', 'rust', 'java', 'spring', 'dotnet', '.net',
+      'api',
+      'server',
+      'express',
+      'fastapi',
+      'django',
+      'flask',
+      'nest',
+      'rest',
+      'graphql',
+      'grpc',
+      'endpoint',
+      'route',
+      'controller',
+      'middleware',
+      'auth',
+      'jwt',
+      'oauth',
+      'backend',
+      'service',
+      'microservice',
+      'node',
+      'python',
+      'go',
+      'rust',
+      'java',
+      'spring',
+      'dotnet',
+      '.net',
     ],
   },
   {
     roomId: 'data',
     keywords: [
-      'database', 'postgres', 'postgresql', 'mysql', 'mongodb', 'redis',
-      'sql', 'nosql', 'migration', 'schema', 'model', 'query', 'index',
-      'prisma', 'typeorm', 'sequelize', 'drizzle', 'analytics', 'etl',
-      'spark', 'pandas', 'numpy', 'jupyter', 'ml', 'machine learning',
-      'dataset', 'training', 'tensorflow', 'pytorch', 'embedding',
+      'database',
+      'postgres',
+      'postgresql',
+      'mysql',
+      'mongodb',
+      'redis',
+      'sql',
+      'nosql',
+      'migration',
+      'schema',
+      'model',
+      'query',
+      'index',
+      'prisma',
+      'typeorm',
+      'sequelize',
+      'drizzle',
+      'analytics',
+      'etl',
+      'spark',
+      'pandas',
+      'numpy',
+      'jupyter',
+      'ml',
+      'machine learning',
+      'dataset',
+      'training',
+      'tensorflow',
+      'pytorch',
+      'embedding',
     ],
   },
   {
     roomId: 'sre',
     keywords: [
-      'docker', 'kubernetes', 'k8s', 'helm', 'terraform', 'ansible',
-      'ci', 'cd', 'pipeline', 'github actions', 'jenkins', 'deploy',
-      'infra', 'infrastructure', 'monitoring', 'logging', 'prometheus',
-      'grafana', 'alerting', 'nginx', 'load balancer', 'ssl', 'tls',
-      'aws', 'azure', 'gcp', 'cloud', 'serverless', 'lambda', 'devops',
+      'docker',
+      'kubernetes',
+      'k8s',
+      'helm',
+      'terraform',
+      'ansible',
+      'ci',
+      'cd',
+      'pipeline',
+      'github actions',
+      'jenkins',
+      'deploy',
+      'infra',
+      'infrastructure',
+      'monitoring',
+      'logging',
+      'prometheus',
+      'grafana',
+      'alerting',
+      'nginx',
+      'load balancer',
+      'ssl',
+      'tls',
+      'aws',
+      'azure',
+      'gcp',
+      'cloud',
+      'serverless',
+      'lambda',
+      'devops',
     ],
   },
   {
     roomId: 'qa',
     keywords: [
-      'test', 'tests', 'spec', 'specs', 'jest', 'vitest', 'pytest',
-      'unittest', 'mocha', 'cypress', 'playwright', 'selenium',
-      'e2e', 'integration test', 'unit test', 'coverage', 'lint',
-      'bug', 'fix', 'regression', 'quality', 'qa', 'assertion',
+      'test',
+      'tests',
+      'spec',
+      'specs',
+      'jest',
+      'vitest',
+      'pytest',
+      'unittest',
+      'mocha',
+      'cypress',
+      'playwright',
+      'selenium',
+      'e2e',
+      'integration test',
+      'unit test',
+      'coverage',
+      'lint',
+      'bug',
+      'fix',
+      'regression',
+      'quality',
+      'qa',
+      'assertion',
     ],
   },
 ];
@@ -130,12 +247,26 @@ export function inferRoomFromText(text: string): string {
   const lower = text.toLowerCase();
 
   const scores = new Map<string, number>();
+
+  // Check built-in room keywords
   for (const { roomId, keywords } of ROOM_KEYWORDS) {
     let score = 0;
     for (const kw of keywords) {
       if (lower.includes(kw)) score++;
     }
     if (score > 0) scores.set(roomId, score);
+  }
+
+  // Check custom room keywords — these take priority over built-ins by getting a bonus
+  for (const [roomId, keywords] of customRoomKeywords) {
+    let score = 0;
+    for (const kw of keywords) {
+      if (lower.includes(kw)) score++;
+    }
+    if (score > 0) {
+      // Add 0.5 bonus so custom rooms win ties over built-ins
+      scores.set(roomId, (scores.get(roomId) ?? 0) + score + 0.5);
+    }
   }
 
   if (scores.size === 0) return 'general';
@@ -160,4 +291,24 @@ export function mergeRooms(customRooms: TeamRoom[]): TeamRoom[] {
   const builtInIds = new Set(BUILT_IN_ROOMS.map((r) => r.id));
   const userRooms = customRooms.filter((r) => !builtInIds.has(r.id));
   return [...BUILT_IN_ROOMS, ...userRooms];
+}
+
+// ── Custom room keywords ──────────────────────────────────────────────────────
+
+/** Custom room keyword mappings managed at runtime by the extension */
+const customRoomKeywords = new Map<string, string[]>(); // roomId → keywords
+
+/**
+ * Register keywords for a custom room so `inferRoomFromText` can auto-assign agents to it.
+ * Pass an empty array or call with no keywords to remove the mapping.
+ */
+export function setCustomRoomKeywords(roomId: string, keywords: string[]): void {
+  if (keywords.length === 0) {
+    customRoomKeywords.delete(roomId);
+  } else {
+    customRoomKeywords.set(
+      roomId,
+      keywords.map((k) => k.toLowerCase()),
+    );
+  }
 }

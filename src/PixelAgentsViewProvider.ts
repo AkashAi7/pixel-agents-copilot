@@ -52,6 +52,7 @@ import {
 import {
   dismissCopilotAgent,
   probeGitHubCopilotChatAPI,
+  setPendingCopilotRoomId,
   startCopilotSessionScanning,
 } from './copilotFileWatcher.js';
 import { CustomAgentManager } from './customAgentManager.js';
@@ -63,7 +64,7 @@ import {
 } from './fileWatcher.js';
 import type { LayoutWatcher } from './layoutPersistence.js';
 import { readLayoutFromFile, watchLayoutFile, writeLayoutToFile } from './layoutPersistence.js';
-import { mergeRooms } from './roomManager.js';
+import { mergeRooms, setCustomRoomKeywords } from './roomManager.js';
 import type { AgentState, TeamRoom } from './types.js';
 
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
@@ -188,6 +189,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // The copilot file watcher will automatically detect the new session and
         // create an agent when Copilot Chat starts writing its JSONL transcript.
         const initialTask = (message.initialTask as string | undefined)?.trim();
+        const suggestedRoomId = message.suggestedRoomId as string | undefined;
+        // Store suggested room so the next Copilot session that gets adopted uses it
+        if (suggestedRoomId) {
+          setPendingCopilotRoomId(suggestedRoomId);
+        }
         try {
           if (initialTask) {
             // Open chat panel with the task pre-filled as a query
@@ -200,9 +206,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         } catch {
           // Fallback: just focus the Copilot panel
           try {
-            await vscode.commands.executeCommand(
-              'workbench.panel.chat.view.copilot.focus',
-            );
+            await vscode.commands.executeCommand('workbench.panel.chat.view.copilot.focus');
           } catch {
             vscode.window.showInformationMessage(
               'Pixel Agents: start a GitHub Copilot Chat session to spawn an agent.',
@@ -656,7 +660,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         } catch {
           vscode.window.showErrorMessage('Pixel Agents: Failed to read or parse layout file.');
         }
-      // ── Orchestrator messages ──────────────────────────────────────────────
+        // ── Orchestrator messages ──────────────────────────────────────────────
       } else if (message.type === 'requestRooms') {
         this.sendRoomsToWebview();
       } else if (message.type === 'requestAudit') {
@@ -691,8 +695,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.customAgentManager?.launch(message.id as string);
       } else if (message.type === 'createCustomRoom') {
         const customRooms = this.context.globalState.get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, []);
+        const roomId = `room-${Date.now()}`;
         const newRoom: TeamRoom = {
-          id: `room-${Date.now()}`,
+          id: roomId,
           name: message.name as string,
           color: (message.color as string | undefined) ?? DEFAULT_ROOM_COLOR,
           icon: (message.icon as string | undefined) ?? '🏠',
@@ -702,12 +707,33 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         };
         customRooms.push(newRoom);
         void this.context.globalState.update(GLOBAL_KEY_CUSTOM_ROOMS, customRooms);
+        // Register keywords for auto-assignment
+        const keywords = message.keywords as string[] | undefined;
+        if (keywords && keywords.length > 0) {
+          setCustomRoomKeywords(roomId, keywords);
+          // Persist keywords alongside room list (stored in separate key)
+          const allKeywords = this.context.globalState.get<Record<string, string[]>>(
+            'customRoomKeywords',
+            {},
+          );
+          allKeywords[roomId] = keywords;
+          void this.context.globalState.update('customRoomKeywords', allKeywords);
+        }
         this.sendRoomsToWebview();
       } else if (message.type === 'deleteCustomRoom') {
+        const deletedRoomId = message.roomId as string;
         const customRooms = this.context.globalState
           .get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, [])
-          .filter((r) => r.id !== (message.roomId as string));
+          .filter((r) => r.id !== deletedRoomId);
         void this.context.globalState.update(GLOBAL_KEY_CUSTOM_ROOMS, customRooms);
+        // Remove persisted keywords for the deleted room
+        const allKeywords = this.context.globalState.get<Record<string, string[]>>(
+          'customRoomKeywords',
+          {},
+        );
+        delete allKeywords[deletedRoomId];
+        void this.context.globalState.update('customRoomKeywords', allKeywords);
+        setCustomRoomKeywords(deletedRoomId, []);
         this.sendRoomsToWebview();
       } else if (message.type === 'setAgentRoom') {
         const agent = this.agents.get(message.agentId as number);
@@ -861,6 +887,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     const customRooms = this.context.globalState.get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, []);
     const rooms = mergeRooms(customRooms);
 
+    // Restore persisted custom room keywords on every sendRoomsToWebview call
+    // (cheap because it's just a Map.set in memory — no I/O)
+    const persistedKeywords = this.context.globalState.get<Record<string, string[]>>(
+      'customRoomKeywords',
+      {},
+    );
+    for (const [roomId, kws] of Object.entries(persistedKeywords)) {
+      setCustomRoomKeywords(roomId, kws);
+    }
+
     // Count agents per room
     const agentCounts: Record<string, number> = {};
     for (const room of rooms) agentCounts[room.id] = 0;
@@ -891,15 +927,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
    * Log a tool event for a given agent and broadcast to audit + activity feed.
    * Called by external tool event interceptors / hook handler wrappers.
    */
-  logAgentToolEvent(
-    agentId: number,
-    toolName: string,
-    done: boolean,
-  ): void {
+  logAgentToolEvent(agentId: number, toolName: string, done: boolean): void {
     const agent = this.agents.get(agentId);
     if (!agent) return;
     const roomId = agent.roomId ?? 'general';
-    const agentType = agent.agentType ?? (agent.agentSource === 'copilot' ? 'copilot-chat' : 'claude-cli');
+    const agentType =
+      agent.agentType ?? (agent.agentSource === 'copilot' ? 'copilot-chat' : 'claude-cli');
     const label = `Agent #${agentId}`;
     this.auditLogger?.log(
       roomId,

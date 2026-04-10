@@ -10,8 +10,10 @@ interface AgentTaskPanelProps {
   agentStatuses: Record<number, string>;
   subagentCharacters: SubagentCharacter[];
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
+  agentRooms: Record<number, string>;
   onClose: () => void;
   onCloseAgent: (id: number) => void;
+  onViewRoomLog: (roomId: string) => void;
 }
 
 function StatusDot({ status, isActive }: { status: string; isActive: boolean }) {
@@ -93,7 +95,10 @@ function HandoffRow({
   return (
     <div
       className="ml-14 pl-8 py-4"
-      style={{ borderLeft: '2px solid var(--color-accent)', borderBottom: '1px solid var(--color-border)' }}
+      style={{
+        borderLeft: '2px solid var(--color-accent)',
+        borderBottom: '1px solid var(--color-border)',
+      }}
     >
       <div className="flex items-center gap-5 mb-2">
         <span className="text-2xs" style={{ color: 'var(--color-accent)' }}>
@@ -131,8 +136,10 @@ export function AgentTaskPanel({
   agentStatuses,
   subagentCharacters,
   subagentTools,
+  agentRooms,
   onClose,
   onCloseAgent,
+  onViewRoomLog,
 }: AgentTaskPanelProps) {
   useTickEverySecond();
 
@@ -143,9 +150,12 @@ export function AgentTaskPanel({
   const isWaiting = status === 'waiting';
   const isActive = !isWaiting && tools.some((t) => !t.done);
   const mySubagents = subagentCharacters.filter((s) => s.parentAgentId === agentId);
+  const roomId = agentRooms[agentId];
 
   // Build interleaved list: show tool, then sub-agents spawned by that tool
-  const rows: Array<{ kind: 'tool'; tool: ToolActivity } | { kind: 'handoff'; sub: SubagentCharacter }> = [];
+  const rows: Array<
+    { kind: 'tool'; tool: ToolActivity } | { kind: 'handoff'; sub: SubagentCharacter }
+  > = [];
   for (const tool of tools) {
     rows.push({ kind: 'tool', tool });
     // Insert handoffs spawned by this tool right after the tool row
@@ -179,7 +189,8 @@ export function AgentTaskPanel({
             <span className="text-base leading-none">Agent #{agentId}</span>
             <span className="text-2xs" style={{ color: 'var(--color-text-muted)' }}>
               {statusLabel}
-              {mySubagents.length > 0 && ` · ${mySubagents.length} sub-agent${mySubagents.length > 1 ? 's' : ''}`}
+              {mySubagents.length > 0 &&
+                ` · ${mySubagents.length} sub-agent${mySubagents.length > 1 ? 's' : ''}`}
             </span>
           </div>
         </div>
@@ -223,18 +234,29 @@ export function AgentTaskPanel({
         )}
       </div>
 
-      {/* Footer: sub-agent summary if any active */}
-      {mySubagents.length > 0 && (
-        <div
-          className="px-12 py-6 shrink-0 text-2xs"
-          style={{
-            borderTop: '2px solid var(--color-border)',
-            color: 'var(--color-accent)',
-          }}
-        >
-          {mySubagents.length} agent{mySubagents.length > 1 ? 's' : ''} working in parallel
-        </div>
-      )}
+      {/* Footer: sub-agent summary + room log button */}
+      <div
+        className="px-12 py-6 shrink-0 flex items-center justify-between"
+        style={{ borderTop: '2px solid var(--color-border)' }}
+      >
+        {mySubagents.length > 0 ? (
+          <span className="text-2xs" style={{ color: 'var(--color-accent)' }}>
+            {mySubagents.length} agent{mySubagents.length > 1 ? 's' : ''} working in parallel
+          </span>
+        ) : (
+          <span />
+        )}
+        {roomId && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onViewRoomLog(roomId)}
+            title="View room activity log"
+          >
+            📋 Room Log
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

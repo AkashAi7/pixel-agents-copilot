@@ -128,6 +128,33 @@ export const dismissedCopilotFiles = new Map<string, number>(); // path → time
 const copilotFileWatcherDisposables = new Map<number, vscode.Disposable>();
 
 /**
+ * When the user opens Copilot Chat from the "+Agent" button with a room selected,
+ * the suggested room ID is stored here. The next Copilot session that gets adopted
+ * will use this room ID instead of text inference.
+ * Cleared after one use so subsequent auto-detections still use keyword inference.
+ */
+let pendingCopilotRoomId: string | null = null;
+let pendingRoomIdExpiry = 0;
+const PENDING_ROOM_TTL_MS = 5 * 60 * 1_000; // 5 minutes
+
+/** Call this when the user opens Copilot Chat with a room suggestion. */
+export function setPendingCopilotRoomId(roomId: string): void {
+  pendingCopilotRoomId = roomId;
+  pendingRoomIdExpiry = Date.now() + PENDING_ROOM_TTL_MS;
+  console.log(`[Pixel Agents] Pending Copilot room ID set: ${roomId}`);
+}
+
+function consumePendingRoomId(): string | null {
+  if (pendingCopilotRoomId && Date.now() < pendingRoomIdExpiry) {
+    const id = pendingCopilotRoomId;
+    pendingCopilotRoomId = null;
+    return id;
+  }
+  pendingCopilotRoomId = null;
+  return null;
+}
+
+/**
  * One-time probe: activate the GitHub.copilot-chat extension and log its exported API surface.
  * When Copilot Chat exposes native tool call events, this is the integration point to replace
  * file-based scraping with zero-latency event subscriptions (full Claude parity).
@@ -275,7 +302,7 @@ function createCopilotAgent(
     isExternal: true,
     agentSource: 'copilot',
     agentType: 'copilot-chat',
-    roomId: inferRoomIdFromFile(jsonlFile),
+    roomId: consumePendingRoomId() ?? inferRoomIdFromFile(jsonlFile),
     projectDir: path.dirname(jsonlFile),
     jsonlFile,
     fileOffset,
@@ -299,7 +326,9 @@ function createCopilotAgent(
   agents.set(id, agent);
   persistAgents();
 
-  console.log(`[Pixel Agents] Copilot agent ${id} created for ${path.basename(jsonlFile)} → room: ${agent.roomId ?? 'general'}`);
+  console.log(
+    `[Pixel Agents] Copilot agent ${id} created for ${path.basename(jsonlFile)} → room: ${agent.roomId ?? 'general'}`,
+  );
 
   webview?.postMessage({
     type: 'agentCreated',

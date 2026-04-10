@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { COLOR_WHITE, ROOM_COLOR_GENERAL } from '../constants.js';
 import type { TeamRoom } from '../hooks/useExtensionMessages.js';
@@ -12,6 +12,9 @@ interface RoomsPanelProps {
   onSelectRoom: (roomId: string | null) => void;
   agentRooms: Record<number, string>;
   onCreateRoom: () => void;
+  onSpawnAgentInRoom: (roomId: string) => void;
+  onViewRoomLogs: (roomId: string) => void;
+  onDeleteRoom: (roomId: string) => void;
 }
 
 export function RoomsPanel({
@@ -20,8 +23,32 @@ export function RoomsPanel({
   selectedRoomId,
   onSelectRoom,
   onCreateRoom,
+  onSpawnAgentInRoom,
+  onViewRoomLogs,
+  onDeleteRoom,
 }: RoomsPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    roomId: string;
+    isBuiltIn: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const handleRoomContextMenu = useCallback((e: React.MouseEvent, room: TeamRoom) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const panelRect = panelRef.current?.getBoundingClientRect();
+    setContextMenu({
+      roomId: room.id,
+      isBuiltIn: room.isBuiltIn,
+      x: e.clientX - (panelRect?.left ?? 0),
+      y: e.clientY - (panelRect?.top ?? 0),
+    });
+  }, []);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
   const handleSelectRoom = useCallback(
     (roomId: string) => {
@@ -40,13 +67,22 @@ export function RoomsPanel({
     return (
       <div
         className="absolute left-0 top-0 bottom-0 z-20 flex flex-col"
-        style={{ width: 28, background: 'var(--color-panel)', borderRight: '1px solid var(--color-border)' }}
+        style={{
+          width: 28,
+          background: 'var(--color-panel)',
+          borderRight: '1px solid var(--color-border)',
+        }}
       >
         <button
           className="w-full flex items-center justify-center py-6 hover:opacity-80"
           onClick={() => setIsCollapsed(false)}
           title="Expand rooms panel"
-          style={{ color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+          style={{
+            color: 'var(--color-text-muted)',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+          }}
         >
           ▶
         </button>
@@ -56,12 +92,14 @@ export function RoomsPanel({
 
   return (
     <div
+      ref={panelRef}
       className="absolute left-0 top-0 bottom-0 z-20 flex flex-col overflow-hidden"
       style={{
         width: 160,
         background: 'var(--color-panel)',
         borderRight: '1px solid var(--color-border)',
       }}
+      onClick={closeContextMenu}
     >
       {/* Header */}
       <div
@@ -80,7 +118,13 @@ export function RoomsPanel({
           </span>
           <button
             onClick={() => setIsCollapsed(true)}
-            style={{ color: 'var(--color-text-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10 }}
+            style={{
+              color: 'var(--color-text-muted)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 10,
+            }}
             title="Collapse"
           >
             ◀
@@ -109,6 +153,7 @@ export function RoomsPanel({
             count={agentCounts[room.id] ?? 0}
             isSelected={selectedRoomId === room.id}
             onClick={() => handleSelectRoom(room.id)}
+            onContextMenu={(e) => handleRoomContextMenu(e, room)}
           />
         ))}
       </div>
@@ -119,7 +164,89 @@ export function RoomsPanel({
           + Room
         </Button>
       </div>
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          style={{
+            position: 'absolute',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            zIndex: 100,
+            background: 'var(--color-panel)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            boxShadow: 'var(--pixel-shadow)',
+            minWidth: 160,
+            overflow: 'hidden',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ContextMenuItem
+            label="⊕ Spawn agent here"
+            onClick={() => {
+              onSpawnAgentInRoom(contextMenu.roomId);
+              closeContextMenu();
+            }}
+          />
+          <ContextMenuItem
+            label="📋 View logs"
+            onClick={() => {
+              onViewRoomLogs(contextMenu.roomId);
+              closeContextMenu();
+            }}
+          />
+          {!contextMenu.isBuiltIn && (
+            <>
+              <div style={{ height: 1, background: 'var(--color-border)' }} />
+              <ContextMenuItem
+                label="🗑 Delete room"
+                danger
+                onClick={() => {
+                  onDeleteRoom(contextMenu.roomId);
+                  closeContextMenu();
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ContextMenuItem({
+  label,
+  onClick,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        padding: '6px 12px',
+        fontSize: 11,
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        color: danger ? 'var(--color-danger)' : 'var(--color-text)',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-border)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = 'none';
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -130,6 +257,7 @@ function RoomRow({
   count,
   isSelected,
   onClick,
+  onContextMenu,
 }: {
   name: string;
   color: string;
@@ -137,11 +265,13 @@ function RoomRow({
   count: number;
   isSelected: boolean;
   onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   return (
     <button
       className="w-full flex items-center gap-6 px-8 py-5 text-left hover:opacity-90 transition-opacity"
       onClick={onClick}
+      onContextMenu={onContextMenu}
       style={{
         background: isSelected ? 'var(--color-border)' : 'transparent',
         border: 'none',
