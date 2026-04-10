@@ -522,6 +522,49 @@ function renderBubbles(
   }
 }
 
+// ── Agent name labels ───────────────────────────────────────────
+
+function renderLabels(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  const fontSize = Math.max(8, Math.round(10 * zoom));
+  ctx.font = `${fontSize}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+
+  for (const ch of characters) {
+    if (!ch.label) continue;
+
+    // Position: above the character, centered
+    // Character is anchored bottom-center at (ch.x, ch.y)
+    // Place label above with some padding
+    const labelX = Math.round(offsetX + ch.x * zoom);
+    const labelY = Math.round(offsetY + (ch.y - 36) * zoom);
+
+    // Draw label with dark background for readability
+    const textMetrics = ctx.measureText(ch.label);
+    const textWidth = textMetrics.width;
+    const padding = 4;
+    const bgX = labelX - textWidth / 2 - padding;
+    const bgY = labelY - fontSize - padding;
+    const bgWidth = textWidth + padding * 2;
+    const bgHeight = fontSize + padding * 2;
+
+    ctx.save();
+    // Semi-transparent dark background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+    // Label text in light color
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillText(ch.label, labelX, labelY);
+    ctx.restore();
+  }
+}
+
 export interface ButtonBounds {
   /** Center X in device pixels */
   cx: number;
@@ -624,6 +667,9 @@ export function renderFrame(
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom);
+
+  // Agent name labels
+  renderLabels(ctx, characters, offsetX, offsetY, zoom);
 
   // Editor overlays
   if (editor) {

@@ -93,8 +93,9 @@ export function ToolOverlay({
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
 
-        // Only show for hovered or selected agents (unless always-show is on)
-        if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
+        // Always show sub-agents with labels permanently; otherwise only show for hovered/selected (or always-show)
+        const isPermanentLabel = isSub && !!ch.label;
+        if (!alwaysShowOverlay && !isSelected && !isHovered && !isPermanentLabel) return null;
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -137,7 +138,7 @@ export function ToolOverlay({
               left: screenX,
               top: screenY - (ch.folderName ? 34 : 28),
               pointerEvents: isSelected ? 'auto' : 'none',
-              opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
+              opacity: (!isSelected && !isHovered) ? (isPermanentLabel && !alwaysShowOverlay ? 0.65 : (isSub ? 0.5 : 0.75)) : 1,
               zIndex: isSelected ? 42 : 41,
             }}
           >

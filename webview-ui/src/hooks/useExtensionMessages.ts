@@ -236,7 +236,7 @@ export function useExtensionMessages(
         // Create sub-agent character for Task/Agent tool subtasks
         if (toolName === 'Task' || toolName === 'Agent') {
           const label = status.startsWith('Subtask:') ? status.slice('Subtask:'.length).trim() : '';
-          const subId = os.addSubagent(id, toolId);
+          const subId = os.addSubagent(id, toolId, label);
           setSubagentCharacters((prev) => {
             if (prev.some((s) => s.id === subId)) return prev;
             return [...prev, { id: subId, parentAgentId: id, parentToolId: toolId, label }];

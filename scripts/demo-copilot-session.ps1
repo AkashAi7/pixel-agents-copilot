@@ -72,7 +72,7 @@ Write-Host ""
 WriteSnapshot $session1 "demo-agent-alpha-0001" "Pixel Agents Demo - Agent Alpha"
 WriteSnapshot $session2 "demo-agent-beta-0001"  "Pixel Agents Demo - Agent Beta"
 
-Write-Host "[demo] Files created. Extension detects them within ~3 seconds."
+Write-Host "[demo] Files created. Extension detects them instantly via FSWatcher."
 Write-Host "[demo] Open the Pixel Agents panel in the Extension Dev Host window."
 Write-Host "[demo] Press Ctrl+C to stop."
 Write-Host ""
