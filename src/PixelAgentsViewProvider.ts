@@ -39,6 +39,9 @@ import {
 import { AuditLogger } from './auditLogger.js';
 import { readConfig, writeConfig } from './configPersistence.js';
 import {
+  COMMAND_RALPH_TOGGLE,
+  COMMAND_SQUAD_INIT,
+  COMMAND_SQUAD_NAP,
   DEFAULT_ROOM_COLOR,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
   GLOBAL_KEY_CUSTOM_ROOMS,
@@ -48,6 +51,7 @@ import {
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
+  RALPH_DEFAULT_INTERVAL_MINUTES,
   WORKSPACE_KEY_AGENT_SEATS,
 } from './constants.js';
 import {
@@ -65,7 +69,10 @@ import {
 } from './fileWatcher.js';
 import type { LayoutWatcher } from './layoutPersistence.js';
 import { readLayoutFromFile, watchLayoutFile, writeLayoutToFile } from './layoutPersistence.js';
+import type { GitHubIssue, RalphStatus } from './ralphWatcher.js';
+import { RalphWatcher } from './ralphWatcher.js';
 import { mergeRooms, setCustomRoomKeywords } from './roomManager.js';
+import { SquadManager } from './squadManager.js';
 import type { AgentState, TeamRoom } from './types.js';
 
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
@@ -116,6 +123,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private auditLogger: AuditLogger | null = null;
   private customAgentManager: CustomAgentManager | null = null;
 
+  // Squad: persistent team state, named cast, decisions, Ralph watch
+  private squadManager: SquadManager | null = null;
+  private ralphWatcher: RalphWatcher | null = null;
+  private lastRalphIssues: GitHubIssue[] = [];
+  private lastRalphStatus: RalphStatus | null = null;
+
   constructor(private readonly context: vscode.ExtensionContext) {
     this.initHooks();
   }
@@ -164,6 +177,19 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       .catch((e) => {
         console.error(`[Pixel Agents] Failed to start server: ${e}`);
       });
+
+    // Register Squad/Ralph VS Code commands
+    this.context.subscriptions.push(
+      vscode.commands.registerCommand(COMMAND_SQUAD_INIT, () => {
+        this.squadInit();
+      }),
+      vscode.commands.registerCommand(COMMAND_SQUAD_NAP, () => {
+        this.squadNap();
+      }),
+      vscode.commands.registerCommand(COMMAND_RALPH_TOGGLE, () => {
+        this.ralphToggle();
+      }),
+    );
   }
 
   /** Register an agent with the hook event handler for session->agent mapping.
@@ -225,6 +251,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Spawn a Claude Code terminal agent (from CreateAgentModal "Claude" option).
         const initialTask = (message.initialTask as string | undefined)?.trim();
         const roomId = (message.roomId as string | undefined) ?? 'general';
+        const newId = this.nextAgentId.current;
+        // Assign Squad name before the agent is created so charter is ready
+        const agentName = this.squadManager?.assignName(newId) ?? `Agent-${newId}`;
+        this.squadManager?.scaffoldAgent(newId, agentName, 'claude-cli', roomId, initialTask);
         await launchNewTerminal(
           this.nextAgentId,
           this.nextTerminalIndex,
@@ -244,6 +274,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           initialTask,
           roomId,
         );
+        this.sendSquadNamesToWebview();
       } else if (message.type === 'focusAgent') {
         const agent = this.agents.get(message.id);
         if (agent) {
@@ -412,6 +443,31 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Send orchestrator: rooms + custom agents
         this.sendRoomsToWebview();
         this.sendCustomAgentsToWebview();
+
+        // ── Squad initialisation ─────────────────────────────────────────────
+        const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (wsRoot) {
+          this.squadManager = new SquadManager(wsRoot);
+          const customRooms = this.context.globalState.get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, []);
+          const rooms = mergeRooms(customRooms);
+          this.squadManager.init(rooms);
+
+          // Init Ralph watcher
+          this.ralphWatcher = new RalphWatcher(
+            RALPH_DEFAULT_INTERVAL_MINUTES,
+            (issues) => {
+              this.lastRalphIssues = issues;
+              this.webview?.postMessage({ type: 'ralphIssues', issues });
+            },
+            (status) => {
+              this.lastRalphStatus = status;
+              this.webview?.postMessage({ type: 'ralphStatus', status });
+            },
+          );
+
+          // Send squad state to webview
+          this.sendSquadStateToWebview();
+        }
 
         // Send workspace folders to webview (only when multi-root)
         const wsFolders = vscode.workspace.workspaceFolders;
@@ -776,6 +832,70 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (message.type === 'clearRoomAudit') {
         this.auditLogger?.clearRoom(message.roomId as string);
+
+        // ── Squad / Ralph messages ─────────────────────────────────────────────
+      } else if (message.type === 'squadInit') {
+        this.squadInit();
+      } else if (message.type === 'squadNap') {
+        const deep = message.deep === true;
+        this.squadNap(deep);
+      } else if (message.type === 'ralphStart') {
+        const interval = (message.intervalMinutes as number | undefined) ?? RALPH_DEFAULT_INTERVAL_MINUTES;
+        if (this.ralphWatcher) {
+          this.ralphWatcher.setIntervalMinutes(interval);
+          this.ralphWatcher.start();
+        }
+      } else if (message.type === 'ralphStop') {
+        this.ralphWatcher?.stop();
+      } else if (message.type === 'ralphPollNow') {
+        void this.ralphWatcher?.pollNow();
+      } else if (message.type === 'requestSquadState') {
+        this.sendSquadStateToWebview();
+      } else if (message.type === 'requestRalphIssues') {
+        this.webview?.postMessage({ type: 'ralphIssues', issues: this.lastRalphIssues });
+        if (this.lastRalphStatus) {
+          this.webview?.postMessage({ type: 'ralphStatus', status: this.lastRalphStatus });
+        }
+      } else if (message.type === 'dispatchIssueToRoom') {
+        // Dispatch a GitHub issue as a task to a Copilot Chat agent in the given room
+        const issue = message.issue as GitHubIssue;
+        const roomId = (message.roomId as string) ?? 'general';
+        const task = `Issue #${issue.number}: ${issue.title}\n\n${issue.body ?? ''}`.trim();
+        const agentName = this.squadManager?.assignName(this.nextAgentId.current) ?? `Agent-${this.nextAgentId.current}`;
+
+        // Log dispatch to decisions
+        this.squadManager?.appendDecision(
+          this.nextAgentId.current,
+          roomId,
+          `Dispatching Issue #${issue.number} ("${issue.title}") to room \`${roomId}\`.`,
+        );
+
+        // Open a Copilot Chat session with the task
+        setPendingCopilotRoomId(roomId);
+        try {
+          await vscode.commands.executeCommand('workbench.action.chat.new');
+          await vscode.env.clipboard.writeText(
+            `@agent ${task} (assigned to ${agentName} in ${roomId})`,
+          );
+          vscode.window.showInformationMessage(
+            `Pixel Agents: Issue #${issue.number} dispatched to ${agentName} — task copied to clipboard. Paste in the new chat.`,
+          );
+        } catch {
+          vscode.window.showWarningMessage(
+            `Pixel Agents: Could not open Copilot Chat. Copy this task manually: ${task}`,
+          );
+        }
+      } else if (message.type === 'openIssueUrl') {
+        const url = message.url as string;
+        if (url.startsWith('https://github.com/')) {
+          await vscode.env.openExternal(vscode.Uri.parse(url));
+        }
+      } else if (message.type === 'squadAppendDecision') {
+        const agentId = message.agentId as number;
+        const roomId = (message.roomId as string) ?? 'general';
+        const decision = message.decision as string;
+        this.squadManager?.appendDecision(agentId, roomId, decision);
+        this.sendSquadStateToWebview();
       }
     });
 
@@ -954,6 +1074,88 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.webview?.postMessage({ type: 'customAgentsUpdate', configs });
   }
 
+  // ── Squad helpers ─────────────────────────────────────────────────────────
+
+  /** Send all Squad state (decisions, agent names, squad dir) to webview. */
+  private sendSquadStateToWebview(): void {
+    if (!this.squadManager) return;
+    const decisions = this.squadManager.readDecisions();
+    const agentNames = this.squadManager.getAllNames();
+    const squadDir = this.squadManager.getSquadDir();
+    this.webview?.postMessage({
+      type: 'squadState',
+      decisions,
+      agentNames,
+      squadDir,
+      isInitialised: this.squadManager.isInitialised(),
+    });
+    this.sendSquadNamesToWebview();
+  }
+
+  /** Lightweight push — just agent name mapping. */
+  private sendSquadNamesToWebview(): void {
+    if (!this.squadManager) return;
+    this.webview?.postMessage({
+      type: 'squadNames',
+      agentNames: this.squadManager.getAllNames(),
+    });
+  }
+
+  /** Run squad init and notify webview. */
+  private squadInit(): void {
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!wsRoot) {
+      vscode.window.showWarningMessage('Pixel Agents: No workspace folder open. Cannot init Squad.');
+      return;
+    }
+    if (!this.squadManager) {
+      this.squadManager = new SquadManager(wsRoot);
+    }
+    const customRooms = this.context.globalState.get<TeamRoom[]>(GLOBAL_KEY_CUSTOM_ROOMS, []);
+    const rooms = mergeRooms(customRooms);
+    this.squadManager.init(rooms);
+
+    const activeAgents = Array.from(this.agents.values()).map((a) => ({
+      id: a.id,
+      roomId: a.roomId,
+      agentType: a.agentType ?? (a.agentSource === 'copilot' ? ('copilot-chat' as const) : ('claude-cli' as const)),
+    }));
+    this.squadManager.syncTeam(rooms, activeAgents);
+
+    this.sendSquadStateToWebview();
+    vscode.window.showInformationMessage(
+      `Pixel Agents: Squad initialised in ${this.squadManager.getSquadDir()}`,
+    );
+  }
+
+  /** Run nap and notify webview. */
+  private squadNap(deep = false): void {
+    if (!this.squadManager) {
+      vscode.window.showWarningMessage('Pixel Agents: Squad not initialised. Run Squad Init first.');
+      return;
+    }
+    const result = this.squadManager.nap(deep);
+    this.sendSquadStateToWebview();
+    vscode.window.showInformationMessage(
+      `Pixel Agents: Nap complete — archived ${result.archived} decisions, ${result.remaining} remaining.`,
+    );
+  }
+
+  /** Toggle Ralph watch on/off. */
+  private ralphToggle(): void {
+    if (!this.ralphWatcher) {
+      vscode.window.showWarningMessage('Pixel Agents: Squad not initialised.');
+      return;
+    }
+    if (this.ralphWatcher.running) {
+      this.ralphWatcher.stop();
+      vscode.window.showInformationMessage('Pixel Agents: Ralph watch stopped.');
+    } else {
+      this.ralphWatcher.start();
+      vscode.window.showInformationMessage('Pixel Agents: Ralph watch started — polling GitHub Issues.');
+    }
+  }
+
   /**
    * Log a tool event for a given agent and broadcast to audit + activity feed.
    * Called by external tool event interceptors / hook handler wrappers.
@@ -1024,6 +1226,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       clearInterval(timer);
     }
     this.copilotPollingTimers.clear();
+    this.ralphWatcher?.dispose();
+    this.ralphWatcher = null;
   }
 }
 

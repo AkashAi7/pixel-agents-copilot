@@ -8,6 +8,8 @@ interface BottomToolbarProps {
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
   workspaceFolders: WorkspaceFolder[];
+  isSquadOpen?: boolean;
+  onToggleSquad?: () => void;
 }
 
 export function BottomToolbar({
@@ -16,6 +18,8 @@ export function BottomToolbar({
   onToggleEditMode,
   isSettingsOpen,
   onToggleSettings,
+  isSquadOpen,
+  onToggleSquad,
 }: BottomToolbarProps) {
   return (
     <div className="absolute bottom-10 left-10 z-20 flex items-center gap-4 pixel-panel p-4">
@@ -33,6 +37,15 @@ export function BottomToolbar({
       >
         Layout
       </Button>
+      {onToggleSquad && (
+        <Button
+          variant={isSquadOpen ? 'active' : 'default'}
+          onClick={onToggleSquad}
+          title="Squad — named agents, decisions, Ralph issue triage"
+        >
+          ⚡ Squad
+        </Button>
+      )}
       <Button
         variant={isSettingsOpen ? 'active' : 'default'}
         onClick={onToggleSettings}

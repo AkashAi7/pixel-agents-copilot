@@ -92,3 +92,28 @@ export interface CustomAgentConfig {
   description?: string;
   createdAt: number;
 }
+
+// ── Squad Types ──────────────────────────────────────────────────────────────
+
+/** GitHub Issue as returned by `gh issue list --json`. */
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body: string;
+  labels: string[];
+  createdAt: string;
+  url: string;
+  state: string;
+  assignees: string[];
+}
+
+/** Status of the Ralph watch loop. */
+export interface RalphStatus {
+  running: boolean;
+  uptime?: number;
+  lastPoll?: number;
+  nextPoll?: number;
+  round: number;
+  intervalMs: number;
+  lastError?: string;
+}

@@ -14,6 +14,7 @@ import { MigrationNotice } from './components/MigrationNotice.js';
 import { RoomsPanel } from './components/RoomsPanel.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { SpawnAgentModal } from './components/SpawnAgentModal.js';
+import { SquadPanel } from './components/SquadPanel.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
@@ -83,6 +84,9 @@ function App() {
     agentRooms,
     auditEntries,
     activityFeed,
+    squadState,
+    ralphIssues,
+    ralphStatus,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -101,6 +105,7 @@ function App() {
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isCreateAgentOpen, setIsCreateAgentOpen] = useState(false);
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
+  const [isSquadOpen, setIsSquadOpen] = useState(false);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -402,6 +407,16 @@ function App() {
 
       {isCreateRoomOpen && <CreateRoomModal onClose={() => setIsCreateRoomOpen(false)} />}
 
+      {isSquadOpen && (
+        <SquadPanel
+          squadState={squadState}
+          ralphIssues={ralphIssues}
+          ralphStatus={ralphStatus}
+          rooms={rooms}
+          onClose={() => setIsSquadOpen(false)}
+        />
+      )}
+
       <BottomToolbar
         isEditMode={editor.isEditMode}
         onOpenClaude={() => setIsCreateAgentOpen(true)}
@@ -409,6 +424,8 @@ function App() {
         isSettingsOpen={isSettingsOpen}
         onToggleSettings={() => setIsSettingsOpen((v) => !v)}
         workspaceFolders={workspaceFolders}
+        isSquadOpen={isSquadOpen}
+        onToggleSquad={() => setIsSquadOpen((v) => !v)}
       />
 
       <VersionIndicator

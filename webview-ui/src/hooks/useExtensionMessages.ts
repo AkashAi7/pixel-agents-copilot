@@ -51,6 +51,35 @@ export interface CustomAgentConfig {
   createdAt: number;
 }
 
+// ── Squad types ──────────────────────────────────────────────────────────────
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body: string;
+  labels: Array<{ name: string }>;
+  createdAt: string;
+  url: string;
+  state: string;
+  assignees: Array<{ login: string }>;
+}
+
+export interface RalphStatus {
+  running: boolean;
+  uptime?: number;
+  lastPoll?: number;
+  nextPoll?: number;
+  round: number;
+  intervalMs: number;
+  lastError?: string;
+}
+
+export interface SquadState {
+  decisions: string;
+  agentNames: Record<number, string>;
+  squadDir: string;
+  isInitialised: boolean;
+}
+
 interface FurnitureAsset {
   id: string;
   name: string;
@@ -107,6 +136,10 @@ interface ExtensionMessageState {
   auditEntries: Record<string, AuditEntry[]>;
   activityFeed: ActivityEvent[];
   customAgents: CustomAgentConfig[];
+  // Squad
+  squadState: SquadState | null;
+  ralphIssues: GitHubIssue[];
+  ralphStatus: RalphStatus | null;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -153,6 +186,9 @@ export function useExtensionMessages(
   const [auditEntries, setAuditEntries] = useState<Record<string, AuditEntry[]>>({});
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
   const [customAgents, setCustomAgents] = useState<CustomAgentConfig[]>([]);
+  const [squadState, setSquadState] = useState<SquadState | null>(null);
+  const [ralphIssues, setRalphIssues] = useState<GitHubIssue[]>([]);
+  const [ralphStatus, setRalphStatus] = useState<RalphStatus | null>(null);
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -539,6 +575,27 @@ export function useExtensionMessages(
         setActivityFeed((prev) => [...prev, evt].slice(-100));
       } else if (msg.type === 'customAgentsUpdate') {
         setCustomAgents(msg.configs as CustomAgentConfig[]);
+      // ── Squad messages ─────────────────────────────────────────────────────
+      } else if (msg.type === 'squadState') {
+        setSquadState({
+          decisions: msg.decisions as string,
+          agentNames: msg.agentNames as Record<number, string>,
+          squadDir: msg.squadDir as string,
+          isInitialised: msg.isInitialised as boolean,
+        });
+        if (msg.agentNames) {
+          // agentNames already captured via squadState
+        }
+      } else if (msg.type === 'squadNames') {
+        setSquadState((prev) =>
+          prev
+            ? { ...prev, agentNames: msg.agentNames as Record<number, string> }
+            : { decisions: '', agentNames: msg.agentNames as Record<number, string>, squadDir: '', isInitialised: false },
+        );
+      } else if (msg.type === 'ralphIssues') {
+        setRalphIssues(msg.issues as GitHubIssue[]);
+      } else if (msg.type === 'ralphStatus') {
+        setRalphStatus(msg.status as RalphStatus);
       }
     };
     window.addEventListener('message', handler);
@@ -575,5 +632,9 @@ export function useExtensionMessages(
     auditEntries,
     activityFeed,
     customAgents,
+    // Squad
+    squadState,
+    ralphIssues,
+    ralphStatus,
   };
 }

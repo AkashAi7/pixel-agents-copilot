@@ -35,3 +35,11 @@ export const ROOM_COLOR_DATA = '#FFB74D';
 export const ROOM_COLOR_SRE = '#F06292';
 export const ROOM_COLOR_QA = '#CE93D8';
 export const ROOM_COLOR_GENERAL = '#90A4AE';
+
+// ── Squad ────────────────────────────────────────────────────
+export const SQUAD_DIR_NAME = '.squad';
+export const RALPH_DEFAULT_INTERVAL_MINUTES = 10;
+export const RALPH_MAX_ISSUES = 30;
+export const COMMAND_SQUAD_NAP = 'pixel-agents.squadNap';
+export const COMMAND_SQUAD_INIT = 'pixel-agents.squadInit';
+export const COMMAND_RALPH_TOGGLE = 'pixel-agents.ralphToggle';
