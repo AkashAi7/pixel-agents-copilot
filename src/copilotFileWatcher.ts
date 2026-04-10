@@ -12,18 +12,12 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type * as vscode from 'vscode';
+import * as vscode from 'vscode';
 
 import { processCopilotLine } from './copilotTranscriptParser.js';
 import type { AgentState } from './types.js';
 
 // ── Constants ───────────────────────────────────────────────────────────────
-
-/** How often to poll each active session file for new lines (ms) */
-const COPILOT_POLL_INTERVAL_MS = 500;
-
-/** How often to scan workspaceStorage for new/active session files (ms) */
-const COPILOT_SCAN_INTERVAL_MS = 3_000;
 
 /** Only adopt files modified within this window (avoids re-showing stale old sessions) */
 const COPILOT_ACTIVE_THRESHOLD_MS = 30 * 60 * 1_000; // 30 minutes
@@ -129,26 +123,71 @@ const trackedCopilotFiles = new Set<string>();
 /** Files the user dismissed via the × button — won't be re-adopted */
 export const dismissedCopilotFiles = new Map<string, number>(); // path → timestamp
 
-// ── Per-agent file polling ─────────────────────────────────────────────────
+/** FSWatcher disposables keyed by agentId — replaces the setInterval polling approach */
+const copilotFileWatcherDisposables = new Map<number, vscode.Disposable>();
+
+/**
+ * One-time probe: activate the GitHub.copilot-chat extension and log its exported API surface.
+ * When Copilot Chat exposes native tool call events, this is the integration point to replace
+ * file-based scraping with zero-latency event subscriptions (full Claude parity).
+ */
+export async function probeGitHubCopilotChatAPI(): Promise<void> {
+  const ext = vscode.extensions.getExtension('GitHub.copilot-chat');
+  if (!ext) {
+    console.log('[Pixel Agents] GitHub.copilot-chat not installed — file-based fallback active');
+    return;
+  }
+  console.log(`[Pixel Agents] GitHub.copilot-chat v${String(ext.packageJSON.version)} found`);
+  try {
+    const api = await ext.activate();
+    if (api && typeof api === 'object') {
+      const keys = Object.keys(api as object);
+      console.log(
+        `[Pixel Agents] GitHub.copilot-chat API exports: ${
+          keys.length > 0 ? keys.join(', ') : '(none — file-based fallback active)'
+        }`,
+      );
+      // Future integration point: if api exposes onToolCallStarted / onDidInvokeTool,
+      // subscribe here and replace the FSWatcher approach with native events.
+    } else {
+      console.log(
+        '[Pixel Agents] GitHub.copilot-chat has no exported API — file-based fallback active',
+      );
+    }
+  } catch (e) {
+    console.log(`[Pixel Agents] GitHub.copilot-chat probe error: ${e}`);
+  }
+}
+
+// ── Per-agent file watching ─────────────────────────────────────────────────
 
 function startCopilotFilePolling(
   agentId: number,
-  _jsonlFile: string,
+  jsonlFile: string,
   agents: Map<number, AgentState>,
-  copilotPollingTimers: Map<number, ReturnType<typeof setInterval>>,
+  _copilotPollingTimers: Map<number, ReturnType<typeof setInterval>>,
   waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
   webview: vscode.Webview | undefined,
 ): void {
-  const interval = setInterval(() => {
+  // Use VS Code's FSWatcher for instant OS-level change notification.
+  // This replaces the 500ms setInterval poll — reactions are now immediate.
+  const dir = vscode.Uri.file(path.dirname(jsonlFile));
+  const filename = path.basename(jsonlFile);
+  const fsWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(dir, filename),
+    true, // ignoreCreateEvents — file already exists when we start watching
+    false, // DO react to change events — this is the trigger
+    true, // ignoreDeleteEvents
+  );
+  fsWatcher.onDidChange(() => {
     if (!agents.has(agentId)) {
-      clearInterval(interval);
-      copilotPollingTimers.delete(agentId);
+      fsWatcher.dispose();
+      copilotFileWatcherDisposables.delete(agentId);
       return;
     }
     readCopilotNewLines(agentId, agents, waitingTimers, webview);
-  }, COPILOT_POLL_INTERVAL_MS);
-
-  copilotPollingTimers.set(agentId, interval);
+  });
+  copilotFileWatcherDisposables.set(agentId, fsWatcher);
 }
 
 function readCopilotNewLines(
@@ -283,6 +322,13 @@ function removeStaleCopilotAgents(
 
     console.log(`[Pixel Agents] Removing stale Copilot agent ${id}`);
 
+    // Dispose FSWatcher for this agent
+    const fsw = copilotFileWatcherDisposables.get(id);
+    if (fsw) {
+      fsw.dispose();
+      copilotFileWatcherDisposables.delete(id);
+    }
+
     const pt = copilotPollingTimers.get(id);
     if (pt) {
       clearInterval(pt);
@@ -330,52 +376,76 @@ export function startCopilotSessionScanning(
 
   console.log(`[Pixel Agents] Copilot adapter watching: ${storageRoots.join(', ')}`);
 
-  const scanTimer = setInterval(() => {
-    const activeFiles = scanCopilotSessionFiles(storageRoots);
+  // Helper: try to adopt a single candidate .jsonl file as a Copilot agent
+  function tryAdoptFile(file: string): void {
+    const normalizedFile = path.resolve(file);
+    if (trackedCopilotFiles.has(normalizedFile)) return;
 
-    for (const file of activeFiles) {
-      const normalizedFile = path.resolve(file);
-
-      if (trackedCopilotFiles.has(normalizedFile)) continue;
-
-      // Skip files dismissed by the user
-      const dismissedAt = dismissedCopilotFiles.get(normalizedFile);
-      if (dismissedAt) {
-        // Expire dismissal after 3 minutes (file might be a genuinely new session)
-        if (Date.now() - dismissedAt < 3 * 60 * 1_000) continue;
-        dismissedCopilotFiles.delete(normalizedFile);
-      }
-
-      // Skip if already tracked by an existing agent
-      let alreadyTracked = false;
-      for (const agent of agents.values()) {
-        if (path.resolve(agent.jsonlFile) === normalizedFile) {
-          alreadyTracked = true;
-          trackedCopilotFiles.add(normalizedFile); // fix up tracking set
-          break;
-        }
-      }
-      if (alreadyTracked) continue;
-
-      trackedCopilotFiles.add(normalizedFile);
-      createCopilotAgent(
-        normalizedFile,
-        nextAgentIdRef,
-        agents,
-        copilotPollingTimers,
-        waitingTimers,
-        webview,
-        persistAgents,
-        onAgentCreated,
-      );
+    const dismissedAt = dismissedCopilotFiles.get(normalizedFile);
+    if (dismissedAt) {
+      if (Date.now() - dismissedAt < 3 * 60 * 1_000) return;
+      dismissedCopilotFiles.delete(normalizedFile);
     }
 
-    // Remove stale agents periodically
+    for (const agent of agents.values()) {
+      if (path.resolve(agent.jsonlFile) === normalizedFile) {
+        trackedCopilotFiles.add(normalizedFile);
+        return;
+      }
+    }
+
+    // Validate the file is active enough to adopt before creating an agent
+    try {
+      const stat = fs.statSync(normalizedFile);
+      if (stat.size < COPILOT_MIN_SIZE_BYTES) return;
+      if (Date.now() - stat.mtimeMs > COPILOT_ACTIVE_THRESHOLD_MS) return;
+    } catch {
+      return;
+    }
+
+    trackedCopilotFiles.add(normalizedFile);
+    createCopilotAgent(
+      normalizedFile,
+      nextAgentIdRef,
+      agents,
+      copilotPollingTimers,
+      waitingTimers,
+      webview,
+      persistAgents,
+      onAgentCreated,
+    );
+  }
+
+  // 1. Initial scan: adopt any .jsonl files already active when the extension loads
+  for (const file of scanCopilotSessionFiles(storageRoots)) {
+    tryAdoptFile(file);
+  }
+
+  // 2. FSWatcher discovery: fires instantly (OS inotify/FSEvents/ReadDirectoryChanges)
+  //    when Copilot Chat creates a new session file — replaces the 3-second scan interval
+  const discoveryDisposables: vscode.Disposable[] = [];
+  for (const root of storageRoots) {
+    const fsw = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(vscode.Uri.file(root), '**/chatSessions/*.jsonl'),
+      false, // react to create events — new Copilot Chat sessions
+      true, // ignore change events — per-file FSWatcher handles those
+      true, // ignore delete events
+    );
+    fsw.onDidCreate((uri) => {
+      // Brief delay to let VS Code flush the initial snapshot before we read the file size
+      setTimeout(() => tryAdoptFile(uri.fsPath), 1_000);
+    });
+    discoveryDisposables.push(fsw);
+  }
+
+  // 3. Stale cleanup — 60 s interval (was an implicit side-effect of the 3 s scan)
+  const staleTimer = setInterval(() => {
     removeStaleCopilotAgents(agents, copilotPollingTimers, waitingTimers, webview, persistAgents);
-  }, COPILOT_SCAN_INTERVAL_MS);
+  }, 60_000);
 
   return () => {
-    clearInterval(scanTimer);
+    for (const d of discoveryDisposables) d.dispose();
+    clearInterval(staleTimer);
   };
 }
 
@@ -396,6 +466,13 @@ export function dismissCopilotAgent(
 
   dismissedCopilotFiles.set(path.resolve(agent.jsonlFile), Date.now());
   trackedCopilotFiles.delete(path.resolve(agent.jsonlFile));
+
+  // Dispose FSWatcher for this agent
+  const fsw = copilotFileWatcherDisposables.get(agentId);
+  if (fsw) {
+    fsw.dispose();
+    copilotFileWatcherDisposables.delete(agentId);
+  }
 
   const pt = copilotPollingTimers.get(agentId);
   if (pt) {

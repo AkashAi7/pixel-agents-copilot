@@ -47,7 +47,11 @@ import {
   LAYOUT_REVISION_KEY,
   WORKSPACE_KEY_AGENT_SEATS,
 } from './constants.js';
-import { dismissCopilotAgent, startCopilotSessionScanning } from './copilotFileWatcher.js';
+import {
+  dismissCopilotAgent,
+  probeGitHubCopilotChatAPI,
+  startCopilotSessionScanning,
+} from './copilotFileWatcher.js';
 import {
   dismissedJsonlFiles,
   ensureProjectScan,
@@ -446,6 +450,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.persistAgents,
           );
         }
+
+        // Probe GitHub.copilot-chat extension API (one-time, logs exported API surface)
+        void probeGitHubCopilotChatAPI();
 
         // Start Copilot Chat session scanning (auto-discovers active chat sessions)
         if (!this.copilotScannerCleanup) {
