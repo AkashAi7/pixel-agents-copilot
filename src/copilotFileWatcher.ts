@@ -27,7 +27,7 @@ const COPILOT_ACTIVE_THRESHOLD_MS = 30 * 60 * 1_000; // 30 minutes
 const COPILOT_STALE_TIMEOUT_MS = 10 * 60 * 1_000; // 10 minutes
 
 /** Minimum file size to consider a session worth tracking */
-const COPILOT_MIN_SIZE_BYTES = 512;
+const COPILOT_MIN_SIZE_BYTES = 50;
 
 // ── Platform path helper ───────────────────────────────────────────────────
 
@@ -427,31 +427,33 @@ export function startCopilotSessionScanning(
 
   console.log(`[Pixel Agents] Copilot adapter watching: ${storageRoots.join(', ')}`);
 
-  // Helper: try to adopt a single candidate .jsonl file as a Copilot agent
-  function tryAdoptFile(file: string): void {
+  // Helper: try to adopt a single candidate .jsonl file as a Copilot agent.
+  // Returns true when the file was adopted, dismissed, or ineligible (no retry needed).
+  // Returns false when the file exists but is too small — caller should retry later.
+  function tryAdoptFile(file: string): boolean {
     const normalizedFile = path.resolve(file);
-    if (trackedCopilotFiles.has(normalizedFile)) return;
+    if (trackedCopilotFiles.has(normalizedFile)) return true;
 
     const dismissedAt = dismissedCopilotFiles.get(normalizedFile);
     if (dismissedAt) {
-      if (Date.now() - dismissedAt < 3 * 60 * 1_000) return;
+      if (Date.now() - dismissedAt < 3 * 60 * 1_000) return true;
       dismissedCopilotFiles.delete(normalizedFile);
     }
 
     for (const agent of agents.values()) {
       if (path.resolve(agent.jsonlFile) === normalizedFile) {
         trackedCopilotFiles.add(normalizedFile);
-        return;
+        return true;
       }
     }
 
     // Validate the file is active enough to adopt before creating an agent
     try {
       const stat = fs.statSync(normalizedFile);
-      if (stat.size < COPILOT_MIN_SIZE_BYTES) return;
-      if (Date.now() - stat.mtimeMs > COPILOT_ACTIVE_THRESHOLD_MS) return;
+      if (stat.size < COPILOT_MIN_SIZE_BYTES) return false; // too small — signal caller to retry
+      if (Date.now() - stat.mtimeMs > COPILOT_ACTIVE_THRESHOLD_MS) return true; // stale, skip
     } catch {
-      return;
+      return true; // file gone — nothing to retry
     }
 
     trackedCopilotFiles.add(normalizedFile);
@@ -465,6 +467,7 @@ export function startCopilotSessionScanning(
       persistAgents,
       onAgentCreated,
     );
+    return true;
   }
 
   // 1. Initial scan: adopt any .jsonl files already active when the extension loads
@@ -483,8 +486,17 @@ export function startCopilotSessionScanning(
       true, // ignore delete events
     );
     fsw.onDidCreate((uri) => {
-      // Brief delay to let VS Code flush the initial snapshot before we read the file size
-      setTimeout(() => tryAdoptFile(uri.fsPath), 1_000);
+      // Retry with back-off: Copilot Chat creates the file before writing to it,
+      // so the first attempt often finds it too small. Retry up to 6 times.
+      let retries = 0;
+      const attempt = () => {
+        if (tryAdoptFile(uri.fsPath)) return; // adopted or permanently skipped
+        retries++;
+        if (retries < 6) {
+          setTimeout(attempt, retries * 2_000); // 2 s, 4 s, 6 s, 8 s, 10 s
+        }
+      };
+      setTimeout(attempt, 500); // first try after 500 ms
     });
     discoveryDisposables.push(fsw);
   }

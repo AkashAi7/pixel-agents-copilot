@@ -347,7 +347,19 @@ function App() {
         selectedRoomId={selectedRoomId}
         onSelectRoom={(id) => {
           setSelectedRoomId(id);
-          if (id) setIsAuditOpen(true);
+          if (id) {
+            setIsAuditOpen(true);
+            // Smoothly pan the camera to the first agent sitting in this room
+            const os = getOfficeState();
+            const roomAgentId = Object.keys(agentRooms)
+              .map(Number)
+              .find((aid) => agentRooms[aid] === id && os.characters.has(aid));
+            if (roomAgentId !== undefined) {
+              os.cameraFollowId = roomAgentId;
+            }
+          } else {
+            getOfficeState().cameraFollowId = null;
+          }
         }}
         agentRooms={agentRooms}
         onCreateRoom={() => setIsCreateRoomOpen(true)}
