@@ -73,6 +73,8 @@ export const BUTTON_ICON_COLOR = '#fff';
 export const CANVAS_FALLBACK_TILE_COLOR = '#444';
 export const CANVAS_ERROR_TILE_COLOR = '#FF00FF';
 export const WALL_COLOR = '#3A3A5C';
+export const LABEL_BG_COLOR = 'rgba(0, 0, 0, 0.7)';
+export const LABEL_TEXT_COLOR = '#e0e0e0';
 
 // ── Camera ───────────────────────────────────────────────────
 export const CAMERA_FOLLOW_LERP = 0.1;

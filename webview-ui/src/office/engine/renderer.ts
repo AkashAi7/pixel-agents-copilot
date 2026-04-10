@@ -22,6 +22,8 @@ import {
   GHOST_VALID_TINT,
   GRID_LINE_COLOR,
   HOVERED_OUTLINE_ALPHA,
+  LABEL_BG_COLOR,
+  LABEL_TEXT_COLOR,
   OUTLINE_Z_SORT_OFFSET,
   ROTATE_BUTTON_BG,
   SEAT_AVAILABLE_COLOR,
@@ -556,10 +558,10 @@ function renderLabels(
 
     ctx.save();
     // Semi-transparent dark background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillStyle = LABEL_BG_COLOR;
     ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
     // Label text in light color
-    ctx.fillStyle = '#e0e0e0';
+    ctx.fillStyle = LABEL_TEXT_COLOR;
     ctx.fillText(ch.label, labelX, labelY);
     ctx.restore();
   }
